@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Walk back through a networking event in 3D: the people you met and the people you heard, placed where they were." />
+    <title>Roommap</title>
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="brand">
+          <h1>Roommap</h1>
+          <span id="venue-name" class="venue"></span>
+          <span id="source" class="tag"></span>
+        </div>
+        <div class="chips" role="group" aria-label="Show people">
+          <button id="chip-met" class="chip" type="button" aria-pressed="true"><i class="dot met"></i>Met <b id="n-met">0</b></button>
+          <button id="chip-heard" class="chip" type="button" aria-pressed="true"><i class="dot heard"></i>Heard <b id="n-heard">0</b></button>
+        </div>
+        <div class="actions">
+          <span id="mode" class="mode" title="Whether Argon is connected"></span>
+          <button id="open-notes" class="primary" type="button">Build from notes</button>
+        </div>
+      </header>
+
+      <main class="main">
+        <section id="stage" class="stage" aria-label="3D room">
+          <div id="tip" class="tip" hidden></div>
+          <p class="hint">Drag to orbit. Scroll to zoom. Click a person.</p>
+          <button id="reset-view" class="ghost reset" type="button">Reset view</button>
+          <p id="webgl-error" class="webgl-error" hidden>This browser could not start WebGL, so the 3D room cannot draw. The list on the right still works.</p>
+        </section>
+        <aside id="panel" class="panel" aria-live="polite"><div id="panel-body"></div></aside>
+      </main>
+    </div>
+
+    <dialog id="notes-dialog" class="dialog">
+      <form id="notes-form" method="dialog">
+        <div class="dialog-head">
+          <h2>Build the room from your notes</h2>
+          <button id="close-dialog" class="ghost" type="button" aria-label="Close">Close</button>
+        </div>
+        <p class="muted">Paste what you remember: who you met, who you only heard, what was said, where in the room. Include LinkedIn links you were given. Argon turns it into a room, and a checker rejects anything it made up.</p>
+        <label for="notes">Notes</label>
+        <textarea id="notes" rows="12" spellcheck="true"></textarea>
+        <label for="image">Floor plan or room photo (optional)</label>
+        <input id="image" type="file" accept="image/png,image/jpeg,image/webp" />
+        <div class="dialog-actions">
+          <button id="build" class="primary" type="submit">Build room</button>
+          <button id="use-sample" class="ghost" type="button">Reset to sample</button>
+        </div>
+        <div id="report" class="report" aria-live="polite"></div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

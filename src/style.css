@@ -1,0 +1,532 @@
+/*
+ * Layout: header bar on top, 3D room filling the left, a 360px panel on the right.
+ * Under 860px the panel drops below the room.
+ * Colours mirror src/theme.ts. The room is dark on purpose: it is a space you look into.
+ */
+:root {
+  color-scheme: dark;
+  --ink: #0f1318;
+  --panel: #141a21;
+  --raised: #1b222b;
+  --line: #2a323d;
+  --text: #e8ecf1;
+  --muted: #8c97a6;
+  --met: #ff7b54;
+  --heard: #7fb4ff;
+  --focus: #ffd166;
+  --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font: 14px/1.5 var(--font);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+}
+
+/* ---- header ---- */
+.top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.venue {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  white-space: nowrap;
+  flex: none;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+}
+
+.chip[aria-pressed='false'] {
+  opacity: 0.45;
+}
+
+.chip b {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.met {
+  background: var(--met);
+}
+
+.dot.heard {
+  background: var(--heard);
+  opacity: 0.7;
+  box-shadow: 0 0 0 3px rgba(127, 180, 255, 0.25);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.primary {
+  background: var(--text);
+  color: var(--ink);
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-weight: 600;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.ghost:hover {
+  background: var(--raised);
+}
+
+/* ---- main ---- */
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  min-height: 0;
+}
+
+.stage {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.reset {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  font-size: 12px;
+  padding: 4px 10px;
+  background: rgba(15, 19, 24, 0.7);
+}
+
+.tip {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  background: rgba(15, 19, 24, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translate(12px, -34px);
+}
+
+.webgl-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.panel {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+#panel-body {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+/* ---- roster ---- */
+.group h3 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.row:hover {
+  background: var(--raised);
+}
+
+.row .name {
+  display: block;
+  font-weight: 600;
+}
+
+.row .sub {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ---- person card ---- */
+.back {
+  justify-self: start;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.badge.met {
+  color: var(--met);
+}
+
+.badge.heard {
+  color: var(--heard);
+}
+
+.card h2 {
+  margin: 4px 0 2px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+.meta {
+  color: var(--muted);
+  margin: 0;
+}
+
+.topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.topics li {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+}
+
+.field > .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.field p {
+  margin: 0;
+}
+
+blockquote {
+  margin: 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--line);
+  color: var(--text);
+}
+
+.copyline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  background: var(--raised);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.copyline p,
+.copyline a {
+  overflow-wrap: anywhere;
+}
+
+.copyline a {
+  color: var(--heard);
+}
+
+.copyline button {
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+.none {
+  color: var(--muted);
+}
+
+/* ---- dialog ---- */
+.dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+}
+
+.dialog::backdrop {
+  background: rgba(5, 7, 10, 0.7);
+}
+
+.dialog form {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+}
+
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.dialog-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+
+.dialog label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.dialog textarea {
+  width: 100%;
+  resize: vertical;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.report {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.report .status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.report .status.bad {
+  color: var(--met);
+}
+
+.round {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.round b.ok {
+  color: #7fd6a0;
+}
+
+.round b.bad {
+  color: var(--met);
+}
+
+.round ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 860px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(300px, 56vh) minmax(0, 1fr);
+  }
+
+  .panel {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+}

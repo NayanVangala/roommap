@@ -1,0 +1,28 @@
+{
+  "name": "roommap",
+  "version": "0.1.0",
+  "description": "Walk back through a networking event in 3D: the people you met and the people you heard, placed where they were.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/genai": "^2.31.0",
+    "three": "^0.186.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "private": true,
+  "type": "module"
+}
