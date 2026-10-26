@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { EventData, Feature, Person, PersonKind, Venue } from './schema';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { buildPerson, PERSON_HEIGHT } from './models/person';
+import { buildDust, buildFeature, buildFloor, buildGrid, buildStringLights, buildWalls, facingOf, gradientTexture } from './models/venue';
+import type { EventData, Person, PersonKind, Venue } from './schema';
 import { COLORS } from './theme';
 
 /**
@@ -8,6 +15,7 @@ import { COLORS } from './theme';
  * Data coordinates: metres, origin north-west corner, x east, z south.
  * World coordinates: the room is centred on the origin, so world = data - size/2.
  * Nothing in here checks the data. src/validate.ts already did.
+ * The shapes themselves live in src/models/.
  */
 
 export interface ViewHooks {
@@ -20,6 +28,16 @@ interface PersonNode {
   group: THREE.Group;
   hit: THREE.Mesh;
   baseY: number;
+  /** Seconds after the intro starts when this person pops in. */
+  delay: number;
+  /** Smoothed hover/selected size. */
+  grow: number;
+  update?: (t: number) => void;
+}
+
+interface FeatureNode {
+  group: THREE.Object3D;
+  delay: number;
 }
 
 interface Pulse {
@@ -28,7 +46,14 @@ interface Pulse {
 }
 
 const STAGE_HEIGHT = 0.45;
-const PERSON_HEIGHT = 1.45;
+const INTRO_SECONDS = 2.4;
+const WALK_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'];
+/** Metres per second when a walk key is held. */
+const WALK_SPEED = 6;
+
+const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
+const easeOutBack = (x: number) => 1 + 2.2 * (x - 1) ** 3 + 1.2 * (x - 1) ** 2;
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 
 function disposeTree(root: THREE.Object3D): void {
   root.traverse((o) => {
@@ -36,33 +61,53 @@ function disposeTree(root: THREE.Object3D): void {
     mesh.geometry?.dispose();
     const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
     for (const m of Array.isArray(material) ? material : material ? [material] : []) {
-      (m as THREE.SpriteMaterial).map?.dispose();
+      const maps = m as THREE.MeshStandardMaterial;
+      maps.map?.dispose();
+      maps.emissiveMap?.dispose();
       m.dispose();
     }
   });
 }
 
-function makeLabel(text: string, opts: { height: number; color?: string; weight?: number }): THREE.Sprite {
+function makeLabel(text: string, opts: { height: number; color?: string; weight?: number; chip?: { text: string; color: string } }): THREE.Sprite {
   const scale = 2;
-  const font = `${opts.weight ?? 600} ${28 * scale}px ui-sans-serif, system-ui, sans-serif`;
+  const font = `${opts.weight ?? 600} ${26 * scale}px "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif`;
   const probe = document.createElement('canvas').getContext('2d');
   if (!probe) throw new Error('2D canvas is not available.');
   probe.font = font;
   const textWidth = Math.ceil(probe.measureText(text).width);
-  const padX = 14 * scale;
+  const h = 44 * scale;
+  const chipD = 26 * scale;
+  const chipPad = 9 * scale;
+  const left = opts.chip ? chipPad + chipD + 8 * scale : 14 * scale;
   const canvas = document.createElement('canvas');
-  canvas.width = textWidth + padX * 2;
-  canvas.height = 44 * scale;
+  canvas.width = left + textWidth + 16 * scale;
+  canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas is not available.');
-  ctx.font = font;
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(15, 19, 24, 0.78)';
+  ctx.fillStyle = 'rgba(16, 9, 4, 0.82)';
+  ctx.strokeStyle = 'rgba(255, 240, 225, 0.16)';
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(0, 0, canvas.width, canvas.height, 10 * scale);
+  ctx.roundRect(1, 1, canvas.width - 2, h - 2, h / 2);
   ctx.fill();
-  ctx.fillStyle = opts.color ?? '#e8ecf1';
-  ctx.fillText(text, padX, canvas.height / 2 + scale);
+  ctx.stroke();
+  if (opts.chip) {
+    ctx.fillStyle = opts.chip.color;
+    ctx.beginPath();
+    ctx.arc(chipPad + chipD / 2, h / 2, chipD / 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1a0d04';
+    ctx.font = `500 ${15 * scale}px "DM Mono", ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(opts.chip.text, chipPad + chipD / 2, h / 2 + scale);
+  }
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = opts.color ?? '#f6ece1';
+  ctx.fillText(text, left, h / 2 + scale);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false }));
@@ -71,16 +116,9 @@ function makeLabel(text: string, opts: { height: number; color?: string; weight?
   return sprite;
 }
 
-function box(w: number, h: number, d: number, color: number, y: number, extra?: THREE.MeshStandardMaterialParameters): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 0.8, ...extra }));
-  mesh.position.y = y;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
 export class RoomView {
   private readonly renderer: THREE.WebGLRenderer;
+  private readonly composer: EffectComposer | null;
   private readonly scene = new THREE.Scene();
   private readonly camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400);
   private readonly controls: OrbitControls;
@@ -93,11 +131,17 @@ export class RoomView {
   private world = new THREE.Group();
   private venue: Venue | null = null;
   private people = new Map<string, PersonNode>();
+  private features: FeatureNode[] = [];
+  private updaters: Array<(t: number) => void> = [];
   private pulses: Pulse[] = [];
-  private route: THREE.Line | null = null;
+  private route: THREE.Mesh | null = null;
+  private routeCurve: THREE.Curve<THREE.Vector3> | null = null;
+  private walker: THREE.Mesh | null = null;
+  private dust: THREE.Points | null = null;
   private pickables: THREE.Mesh[] = [];
   private visible: Record<PersonKind, boolean> = { met: true, heard: true };
   private readonly selectionRing: THREE.Mesh;
+  private readonly beam: THREE.Mesh;
 
   private selectedId: string | null = null;
   private hoverId: string | null = null;
@@ -107,6 +151,15 @@ export class RoomView {
   private downAt: { x: number; y: number } | null = null;
   private hoverQueued = false;
   private lastPointer = { x: 0, y: 0 };
+  /** Where the camera rests once the intro is over. */
+  private restPos = new THREE.Vector3();
+  /** Clock time the intro started. Infinity = not started, so everything stays hidden. */
+  private introAt = Infinity;
+  /** Walk keys currently held, and the bits the walk maths reuses every frame. */
+  private readonly walking = new Set<string>();
+  private readonly heading = new THREE.Vector3();
+  private readonly stopListening = new AbortController();
+  private lastT = 0;
 
   constructor(private readonly container: HTMLElement, private readonly hooks: ViewHooks) {
     this.canvas = document.createElement('canvas');
@@ -117,24 +170,34 @@ export class RoomView {
     this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
     this.scene.background = new THREE.Color(COLORS.ink);
+    this.scene.fog = new THREE.Fog(COLORS.ink, 50, 120);
     this.scene.add(this.world);
 
-    this.scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x2a323d, 1.7));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(8, 16, 10);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -20;
-    sun.shadow.camera.right = 20;
-    sun.shadow.camera.top = 20;
-    sun.shadow.camera.bottom = -20;
-    sun.shadow.camera.far = 60;
-    sun.shadow.bias = -0.0005;
-    this.scene.add(sun);
+    // Reflections for glossy surfaces (bar top, glass, metal). Kept dim on purpose.
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.3;
+    pmrem.dispose();
+
+    this.scene.add(new THREE.HemisphereLight(0xffe2c6, 0x1a0f08, 0.9));
+    const key = new THREE.DirectionalLight(0xffe8d0, 1.5);
+    key.position.set(8, 16, 10);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -20;
+    key.shadow.camera.right = 20;
+    key.shadow.camera.top = 20;
+    key.shadow.camera.bottom = -20;
+    key.shadow.camera.far = 60;
+    key.shadow.bias = -0.0005;
+    this.scene.add(key);
+    const rim = new THREE.DirectionalLight(0x7aa6ff, 0.45);
+    rim.position.set(-10, 8, -12);
+    this.scene.add(rim);
 
     this.selectionRing = new THREE.Mesh(
       new THREE.RingGeometry(0.52, 0.6, 48),
@@ -144,21 +207,57 @@ export class RoomView {
     this.selectionRing.visible = false;
     this.scene.add(this.selectionRing);
 
+    // A column of light over whoever is selected. Black fades to nothing under additive blending.
+    this.beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34, 0.5, 3.2, 28, 1, true),
+      new THREE.MeshBasicMaterial({
+        map: gradientTexture('#000000', '#ffffff'),
+        color: COLORS.focus,
+        transparent: true,
+        opacity: 0.4,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    this.beam.visible = false;
+    this.scene.add(this.beam);
+
+    // Bloom makes the lit things (LEDs, bulbs, screen) glow. If the browser cannot do it, draw plainly.
+    let composer: EffectComposer | null = null;
+    try {
+      const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+      composer = new EffectComposer(this.renderer, target);
+      composer.addPass(new RenderPass(this.scene, this.camera));
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.75, 0.9));
+      composer.addPass(new OutputPass());
+    } catch (error) {
+      console.warn('Post-processing is off.', error);
+      composer = null;
+    }
+    this.composer = composer;
+
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.06;
     this.controls.minDistance = 4;
+    // Panning slides along the floor (not up and down), like walking.
+    this.controls.screenSpacePanning = false;
+    this.bindWalkKeys();
     this.controls.addEventListener('start', () => {
       this.tweenTarget = null;
       this.userMoved = true;
+      this.finishIntro();
     });
 
     this.canvas.addEventListener('pointerdown', (e) => {
       this.downAt = { x: e.clientX, y: e.clientY };
+      if (!this.hoverId) this.canvas.style.cursor = 'grabbing';
     });
     this.canvas.addEventListener('pointerup', (e) => {
       const start = this.downAt;
       this.downAt = null;
+      this.canvas.style.cursor = this.hoverId ? 'pointer' : 'grab';
       if (!start || Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) return;
       this.hooks.onSelect(this.pick(e.clientX, e.clientY));
     });
@@ -179,26 +278,61 @@ export class RoomView {
     this.renderer.setAnimationLoop((time) => this.tick(time));
   }
 
-  /** Replace everything in the room with a new event. */
+  /** Replace everything in the room with a new event. It stays hidden until playIntro(). */
   setEvent(event: EventData): void {
     this.scene.remove(this.world);
     disposeTree(this.world);
     this.world = new THREE.Group();
     this.scene.add(this.world);
     this.people.clear();
+    this.features = [];
+    this.updaters = [];
     this.pulses = [];
     this.route = null;
+    this.routeCurve = null;
+    this.walker = null;
+    this.dust = null;
     this.selectedId = null;
     this.hoverId = null;
     this.selectionRing.visible = false;
+    this.beam.visible = false;
     this.venue = event.venue;
+    this.introAt = Infinity;
 
-    this.buildRoom(event.venue);
-    for (const f of event.venue.features) this.world.add(this.buildFeature(f, event.venue));
-    for (const p of event.people) this.addPerson(p, event.venue);
-    this.buildRoute(event);
+    const { venue } = event;
+    this.world.add(buildFloor(venue), buildGrid(venue), buildWalls(venue), buildStringLights(venue));
+    this.dust = buildDust(venue);
+    this.world.add(this.dust);
+
+    const reach = Math.hypot(venue.width, venue.depth);
+    for (const f of venue.features) {
+      const model = buildFeature(f, venue);
+      const pos = this.toWorld(venue, f.x, f.z);
+      model.object.position.copy(pos);
+      this.world.add(model.object);
+      if (model.update) this.updaters.push(model.update);
+      if (f.label) {
+        const label = makeLabel(f.label, { height: 0.4, color: '#c9b8a6', weight: 500 });
+        label.position.y = model.top + 0.45;
+        model.object.add(label);
+      }
+      this.features.push({ group: model.object, delay: 0.1 + (Math.hypot(f.x - venue.width / 2, f.z - venue.depth / 2) / reach) * 0.8 });
+    }
+
+    const met = event.people.filter((p) => p.kind === 'met').sort((a, b) => a.order - b.order);
+    for (const p of event.people) this.addPerson(p, event, met);
+    this.buildRoute(event, met);
     this.applyVisibility();
     this.resetView();
+  }
+
+  /** Start the entrance: furniture rises, people pop in, the camera swoops down. */
+  playIntro(): void {
+    this.introAt = this.reducedMotion ? -1e9 : performance.now() / 1000;
+  }
+
+  private finishIntro(): void {
+    if (this.introAt !== Infinity) this.introAt = -1e9;
   }
 
   setKindVisible(kind: PersonKind, on: boolean): void {
@@ -214,8 +348,11 @@ export class RoomView {
     this.selectedId = id && this.people.has(id) ? id : null;
     const node = this.selectedId ? this.people.get(this.selectedId) : undefined;
     this.selectionRing.visible = !!node;
+    this.beam.visible = !!node;
     if (node) {
-      this.selectionRing.position.set(node.group.position.x, node.baseY + 0.03, node.group.position.z);
+      this.finishIntro();
+      this.selectionRing.position.set(node.group.position.x, node.baseY + 0.04, node.group.position.z);
+      this.beam.position.set(node.group.position.x, node.baseY + 1.6, node.group.position.z);
       this.tweenTarget = new THREE.Vector3(node.group.position.x, 0.8, node.group.position.z);
     } else {
       this.tweenTarget = null;
@@ -225,6 +362,53 @@ export class RoomView {
   resetView(): void {
     this.userMoved = false;
     this.frame();
+  }
+
+  /** WASD or arrow keys glide you across the floor, relative to where the camera looks. */
+  private bindWalkKeys(): void {
+    const signal = this.stopListening.signal;
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        const key = e.key.toLowerCase();
+        if (!WALK_KEYS.includes(key) || e.metaKey || e.ctrlKey || e.altKey) return;
+        const from = e.target as HTMLElement;
+        const typing = from.closest?.('input, textarea, select, [role="tab"]') || document.querySelector('dialog[open]');
+        if (typing || this.container.closest('[inert]')) return;
+        this.walking.add(key);
+        e.preventDefault();
+      },
+      { signal },
+    );
+    window.addEventListener('keyup', (e) => this.walking.delete(e.key.toLowerCase()), { signal });
+    window.addEventListener('blur', () => this.walking.clear(), { signal });
+  }
+
+  private walk(dt: number): void {
+    const has = (...keys: string[]) => (keys.some((k) => this.walking.has(k)) ? 1 : 0);
+    const forward = has('w', 'arrowup') - has('s', 'arrowdown');
+    const sideways = has('d', 'arrowright') - has('a', 'arrowleft');
+    if (!forward && !sideways) return;
+    this.camera.getWorldDirection(this.heading);
+    this.heading.y = 0;
+    this.heading.normalize();
+    // Forward is where the camera looks along the floor. Right is a quarter turn from that.
+    const { x, z } = this.heading;
+    const step = new THREE.Vector3(x * forward - z * sideways, 0, z * forward + x * sideways);
+    step.normalize().multiplyScalar(WALK_SPEED * dt);
+    this.controls.target.add(step);
+    this.camera.position.add(step);
+    this.tweenTarget = null;
+    this.userMoved = true;
+    this.finishIntro();
+  }
+
+  /** What a plain drag does. Shift-drag (or right-drag) always does the other one. */
+  setDragMode(mode: 'orbit' | 'pan'): void {
+    const pan = mode === 'pan';
+    this.controls.mouseButtons.LEFT = pan ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
+    this.controls.mouseButtons.RIGHT = pan ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+    this.controls.touches.ONE = pan ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
   }
 
   /** Back the camera up until the whole room fits, whatever shape the window is. */
@@ -240,7 +424,8 @@ export class RoomView {
     const distance = Math.max(fitWidth, fitDepth);
     this.tweenTarget = null;
     this.controls.target.set(0, 0, 0);
-    this.camera.position.set(0, Math.sin(pitch) * distance, Math.cos(pitch) * distance);
+    this.restPos.set(0, Math.sin(pitch) * distance, Math.cos(pitch) * distance);
+    this.camera.position.copy(this.restPos);
     this.controls.maxDistance = Math.max(width, depth) * 2.4;
     this.controls.update();
   }
@@ -255,10 +440,12 @@ export class RoomView {
   }
 
   dispose(): void {
+    this.stopListening.abort();
     this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
     this.controls.dispose();
     disposeTree(this.world);
+    this.composer?.dispose();
     this.renderer.dispose();
     this.canvas.remove();
   }
@@ -269,154 +456,45 @@ export class RoomView {
     return new THREE.Vector3(x - venue.width / 2, 0, z - venue.depth / 2);
   }
 
-  private buildRoom(venue: Venue): void {
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(venue.width, venue.depth),
-      new THREE.MeshStandardMaterial({ color: COLORS.floor, roughness: 0.95 }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    this.world.add(floor);
-
-    const verts: number[] = [];
-    for (let x = 0; x <= venue.width; x++) verts.push(x - venue.width / 2, 0.005, -venue.depth / 2, x - venue.width / 2, 0.005, venue.depth / 2);
-    for (let z = 0; z <= venue.depth; z++) verts.push(-venue.width / 2, 0.005, z - venue.depth / 2, venue.width / 2, 0.005, z - venue.depth / 2);
-    const grid = new THREE.BufferGeometry();
-    grid.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    this.world.add(new THREE.LineSegments(grid, new THREE.LineBasicMaterial({ color: COLORS.grid, transparent: true, opacity: 0.55 })));
-
-    const t = 0.14;
-    const h = 1.3;
-    const wallMat = { color: COLORS.wall, transparent: true, opacity: 0.5 } as const;
-    const walls: Array<[number, number, number, number]> = [
-      [venue.width + t, t, 0, -venue.depth / 2 - t / 2],
-      [venue.width + t, t, 0, venue.depth / 2 + t / 2],
-      [t, venue.depth + t, -venue.width / 2 - t / 2, 0],
-      [t, venue.depth + t, venue.width / 2 + t / 2, 0],
-    ];
-    for (const [w, d, x, z] of walls) {
-      const wall = box(w, h, d, COLORS.wall, h / 2, wallMat);
-      wall.castShadow = false;
-      wall.position.x = x;
-      wall.position.z = z;
-      this.world.add(wall);
-    }
-  }
-
-  private buildFeature(f: Feature, venue: Venue): THREE.Group {
-    const g = new THREE.Group();
-    const c = COLORS.feature[f.kind];
-    const pos = this.toWorld(venue, f.x, f.z);
-    g.position.copy(pos);
-    let top = 1;
-
-    switch (f.kind) {
-      case 'stage':
-        g.add(box(f.w, STAGE_HEIGHT, f.d, c, STAGE_HEIGHT / 2));
-        top = STAGE_HEIGHT;
-        break;
-      case 'bar': {
-        g.add(box(f.w, 1.05, f.d, c, 0.525));
-        g.add(box(f.w + 0.1, 0.07, f.d + 0.1, 0x8a6a55, 1.085));
-        top = 1.12;
-        break;
-      }
-      case 'table': {
-        const r = Math.min(f.w, f.d) / 2;
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 1, 12), new THREE.MeshStandardMaterial({ color: 0x2c333d, roughness: 0.6 }));
-        pole.position.y = 0.5;
-        pole.castShadow = true;
-        const disc = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.06, 28), new THREE.MeshStandardMaterial({ color: c, roughness: 0.6 }));
-        disc.position.y = 1.03;
-        disc.castShadow = true;
-        disc.receiveShadow = true;
-        g.add(pole, disc);
-        top = 1.06;
-        break;
-      }
-      case 'booth':
-        g.add(box(f.w, 1.05, f.d, c, 0.525));
-        g.add(box(f.w * 0.8, 1.1, 0.08, 0x4fb3a8, 1.6, { emissive: 0x4fb3a8, emissiveIntensity: 0.25 }));
-        top = 2.2;
-        break;
-      case 'sofa': {
-        g.add(box(f.w, 0.45, f.d, c, 0.225));
-        const away = f.z >= venue.depth / 2 ? 1 : -1;
-        const back = box(f.w, 0.55, f.d * 0.25, c, 0.72);
-        back.position.z = away * f.d * 0.375;
-        g.add(back);
-        top = 1;
-        break;
-      }
-      case 'screen':
-        g.add(box(f.w, 2.4, f.d, c, 2.3, { emissive: 0x5b7fb5, emissiveIntensity: 0.35 }));
-        top = 3.8;
-        break;
-      case 'plant': {
-        const r = Math.min(f.w, f.d) / 2;
-        const pot = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.45, 0.4, 16), new THREE.MeshStandardMaterial({ color: 0x5a4a3f, roughness: 0.9 }));
-        pot.position.y = 0.2;
-        const leaves = new THREE.Mesh(new THREE.SphereGeometry(r * 1.15, 16, 12), new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
-        leaves.position.y = 0.95;
-        leaves.castShadow = true;
-        g.add(pot, leaves);
-        top = 1.7;
-        break;
-      }
-      case 'door':
-        g.add(box(f.w, 0.04, f.d + 0.1, c, 0.02, { emissive: c, emissiveIntensity: 0.3 }));
-        top = 0.3;
-        break;
-    }
-
-    if (f.label) {
-      const label = makeLabel(f.label, { height: 0.42, color: '#aab6c6', weight: 500 });
-      label.position.y = top + 0.45;
-      g.add(label);
-    }
-    return g;
-  }
-
-  private addPerson(p: Person, venue: Venue): void {
+  private addPerson(p: Person, event: EventData, met: Person[]): void {
+    const { venue } = event;
     const heard = p.kind === 'heard';
     const color = heard ? COLORS.heard : COLORS.met;
-    const onStage = venue.features.some((f) => f.kind === 'stage' && Math.abs(p.x - f.x) <= f.w / 2 && Math.abs(p.z - f.z) <= f.d / 2);
-    const baseY = onStage ? STAGE_HEIGHT : 0;
+    const stage = venue.features.find((f) => f.kind === 'stage' && Math.abs(p.x - f.x) <= f.w / 2 && Math.abs(p.z - f.z) <= f.d / 2);
+    const baseY = stage ? STAGE_HEIGHT : 0;
 
     const group = new THREE.Group();
     const pos = this.toWorld(venue, p.x, p.z);
     group.position.set(pos.x, baseY, pos.z);
 
-    const material = new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.5,
-      emissive: color,
-      emissiveIntensity: heard ? 0.3 : 0.14,
-      transparent: heard,
-      opacity: heard ? 0.6 : 1,
-    });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.85, 6, 16), material);
-    body.position.y = 0.625;
-    body.castShadow = !heard;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 16), material);
-    head.position.y = 1.44;
-    head.castShadow = !heard;
+    const model = buildPerson(p, color);
+    group.add(model.object);
 
-    const base = new THREE.Mesh(
-      new THREE.RingGeometry(0.34, 0.4, 40),
-      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
-    );
-    base.rotation.x = -Math.PI / 2;
-    base.position.y = 0.03;
+    // Who they face: speakers face the room, the audience faces the stage, people you met face where you came from.
+    const lookAt = (x: number, z: number) => Math.atan2(x - p.x, z - p.z);
+    const anyStage = venue.features.find((f) => f.kind === 'stage');
+    if (stage) model.object.rotation.y = facingOf(stage, venue);
+    else if (heard) model.object.rotation.y = anyStage ? lookAt(anyStage.x, anyStage.z) : lookAt(venue.width / 2, venue.depth / 2);
+    else {
+      const i = met.findIndex((m) => m.id === p.id);
+      const door = venue.features.find((f) => f.kind === 'door');
+      const from = i > 0 ? met[i - 1] : undefined;
+      const fx = from ? from.x : door ? door.x : venue.width / 2;
+      const fz = from ? from.z : door ? door.z : venue.depth;
+      model.object.rotation.y = lookAt(fx, fz);
+    }
 
-    const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 1.9, 10), new THREE.MeshBasicMaterial({ visible: false }));
-    hit.position.y = 0.95;
+    const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 2, 10), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.y = 1;
     hit.userData.personId = p.id;
 
-    const label = makeLabel(p.name, { height: 0.38, color: heard ? '#b9d4ff' : '#ffd2c4' });
-    label.position.y = 2.0;
-
-    group.add(body, head, base, hit, label);
+    const label = makeLabel(p.name, {
+      height: 0.4,
+      color: heard ? '#cfe3ff' : '#ffd9c4',
+      chip: { text: String(p.order).padStart(2, '0'), color: heard ? '#9cc9ff' : '#ff8539' },
+    });
+    label.position.y = 2.2;
+    group.add(hit, label);
 
     if (heard) {
       for (let i = 0; i < 2; i++) {
@@ -432,25 +510,28 @@ export class RoomView {
     }
 
     this.world.add(group);
-    this.people.set(p.id, { person: p, group, hit, baseY });
+    this.people.set(p.id, { person: p, group, hit, baseY, delay: 0.55 + p.order * 0.07, grow: 1, update: model.update });
   }
 
-  private buildRoute(event: EventData): void {
+  private buildRoute(event: EventData, met: Person[]): void {
     const { venue } = event;
-    const met = event.people.filter((p) => p.kind === 'met').sort((a, b) => a.order - b.order);
     const door = venue.features.find((f) => f.kind === 'door');
     const points: THREE.Vector3[] = [];
     if (door) points.push(this.toWorld(venue, door.x, door.z - 0.6));
     for (const p of met) points.push(this.toWorld(venue, p.x, p.z));
     if (points.length < 2) return;
-    for (const pt of points) pt.y = 0.045;
-    const line = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(points),
-      new THREE.LineDashedMaterial({ color: COLORS.route, dashSize: 0.3, gapSize: 0.22, transparent: true, opacity: 0.55 }),
+    for (const pt of points) pt.y = 0.06;
+    const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal');
+    this.routeCurve = curve;
+    this.route = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, points.length * 14, 0.028, 6, false),
+      new THREE.MeshBasicMaterial({ color: COLORS.route, transparent: true, opacity: 0.55 }),
     );
-    line.computeLineDistances();
-    this.route = line;
-    this.world.add(line);
+    this.world.add(this.route);
+    // A small light that walks the route, so the order of the night reads at a glance.
+    this.walker = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd9b0 }));
+    this.walker.scale.setScalar(1.4);
+    this.world.add(this.walker);
   }
 
   // ---- interaction -------------------------------------------------------
@@ -462,7 +543,9 @@ export class RoomView {
       node.group.visible = on;
       if (on) this.pickables.push(node.hit);
     }
-    if (this.route) this.route.visible = this.visible.met;
+    const showRoute = this.visible.met;
+    if (this.route) this.route.visible = showRoute;
+    if (this.walker) this.walker.visible = showRoute;
   }
 
   private pick(clientX: number, clientY: number): string | null {
@@ -486,6 +569,8 @@ export class RoomView {
     const h = this.container.clientHeight;
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
+    this.composer?.setPixelRatio(this.renderer.getPixelRatio());
+    this.composer?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     if (!this.userMoved && this.venue) this.frame();
@@ -493,6 +578,13 @@ export class RoomView {
 
   private tick(time: number): void {
     const t = time / 1000;
+    const dt = Math.min(0.1, Math.max(0, t - this.lastT));
+    this.lastT = t;
+    // Another tab is showing (its page is marked inert). Do not burn the GPU on a room nobody can see.
+    if (this.container.closest('[inert]')) return;
+    this.walk(dt);
+    // Seconds since the intro began. -Infinity (not started) keeps everything at scale 0.
+    const since = this.introAt === Infinity ? -Infinity : performance.now() / 1000 - this.introAt;
 
     if (this.tweenTarget) {
       const step = this.tweenTarget.clone().sub(this.controls.target).multiplyScalar(0.12);
@@ -500,11 +592,38 @@ export class RoomView {
       this.camera.position.add(step);
       if (step.length() < 0.004) this.tweenTarget = null;
     }
+
+    // Camera swoops in from higher and off to one side while the intro plays.
+    if (since < INTRO_SECONDS && !this.userMoved) {
+      const k = easeOutCubic(clamp01(since / INTRO_SECONDS));
+      const offset = this.restPos.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), (1 - k) * 0.9).multiplyScalar(1 + (1 - k) * 0.55);
+      this.camera.position.copy(this.controls.target).add(offset);
+    }
     this.controls.update();
 
+    // Keep the point you are looking at inside the room, so you cannot drag off into the void.
+    if (this.venue) {
+      const target = this.controls.target;
+      const dx = THREE.MathUtils.clamp(target.x, -this.venue.width / 2, this.venue.width / 2) - target.x;
+      const dz = THREE.MathUtils.clamp(target.z, -this.venue.depth / 2, this.venue.depth / 2) - target.z;
+      if (dx || dz) {
+        target.x += dx;
+        target.z += dz;
+        this.camera.position.x += dx;
+        this.camera.position.z += dz;
+      }
+    }
+
+    for (const update of this.updaters) update(this.reducedMotion ? 0 : t);
+
+    for (const f of this.features) f.group.scale.set(1, Math.max(0.0001, easeOutCubic(clamp01((since - f.delay) / 0.9))), 1);
+
     for (const node of this.people.values()) {
-      const grow = node.person.id === this.hoverId || node.person.id === this.selectedId ? 1.1 : 1;
-      node.group.scale.lerp(new THREE.Vector3(grow, grow, grow), 0.2);
+      const wanted = node.person.id === this.hoverId || node.person.id === this.selectedId ? 1.1 : 1;
+      node.grow += (wanted - node.grow) * 0.2;
+      const pop = easeOutBack(clamp01((since - node.delay) / 0.7));
+      node.group.scale.setScalar(Math.max(0.0001, node.grow * pop));
+      node.update?.(this.reducedMotion ? 0 : t);
     }
 
     for (const pulse of this.pulses) {
@@ -524,6 +643,17 @@ export class RoomView {
       this.selectionRing.scale.setScalar(s);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.walker && this.routeCurve && !this.reducedMotion) {
+      this.walker.position.copy(this.routeCurve.getPointAt((t * 0.045) % 1));
+      this.walker.position.y = 0.12;
+    }
+
+    if (this.dust && !this.reducedMotion) {
+      this.dust.rotation.y = t * 0.012;
+      this.dust.position.y = Math.sin(t * 0.15) * 0.25;
+    }
+
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
   }
 }
