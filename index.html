@@ -4,41 +4,73 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content="Walk back through a networking event in 3D: the people you met and the people you heard, placed where they were." />
+    <meta name="theme-color" content="#100904" />
     <title>Roommap</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23100904'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ff8539'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body>
+    <div id="intro" class="intro" aria-hidden="true">
+      <p class="intro-word display">Roommap<span>.</span></p>
+      <p class="intro-sub">Mapping the room</p>
+      <span class="intro-bar"></span>
+    </div>
+
     <div class="app">
       <header class="top">
-        <div class="brand">
-          <h1>Roommap</h1>
-          <span id="venue-name" class="venue"></span>
-          <span id="source" class="tag"></span>
-        </div>
-        <div class="chips" role="group" aria-label="Show people">
-          <button id="chip-met" class="chip" type="button" aria-pressed="true"><i class="dot met"></i>Met <b id="n-met">0</b></button>
-          <button id="chip-heard" class="chip" type="button" aria-pressed="true"><i class="dot heard"></i>Heard <b id="n-heard">0</b></button>
-        </div>
+        <div class="logo display">Roommap<span>.</span></div>
+        <nav id="tabs" class="tabs" role="tablist" aria-label="Views">
+          <span id="tab-pill" class="tab-pill" aria-hidden="true"></span>
+          <button id="tab-room" class="tab" role="tab" type="button" data-view="room" aria-selected="true" aria-controls="view-room">Room</button>
+          <button id="tab-people" class="tab" role="tab" type="button" data-view="people" aria-selected="false" aria-controls="view-people" tabindex="-1">People</button>
+          <button id="tab-timeline" class="tab" role="tab" type="button" data-view="timeline" aria-selected="false" aria-controls="view-timeline" tabindex="-1">Timeline</button>
+          <button id="tab-topics" class="tab" role="tab" type="button" data-view="topics" aria-selected="false" aria-controls="view-topics" tabindex="-1">Topics</button>
+          <button id="tab-followups" class="tab" role="tab" type="button" data-view="followups" aria-selected="false" aria-controls="view-followups" tabindex="-1">Follow-ups</button>
+        </nav>
         <div class="actions">
           <span id="mode" class="mode" title="Whether Argon is connected"></span>
-          <button id="open-notes" class="primary" type="button">Build from notes</button>
+          <button id="open-notes" class="primary" type="button"><span>Build from notes</span></button>
         </div>
       </header>
 
-      <main class="main">
-        <section id="stage" class="stage" aria-label="3D room">
-          <div id="tip" class="tip" hidden></div>
-          <p class="hint">Drag to orbit. Scroll to zoom. Click a person.</p>
-          <button id="reset-view" class="ghost reset" type="button">Reset view</button>
-          <p id="webgl-error" class="webgl-error" hidden>This browser could not start WebGL, so the 3D room cannot draw. The list on the right still works.</p>
+      <main class="views">
+        <section id="view-room" class="view is-active" role="tabpanel" aria-labelledby="tab-room">
+          <div class="room">
+            <section id="stage" class="stage" aria-label="3D room">
+              <div class="hero">
+                <p id="source" class="eyebrow"></p>
+                <h1 id="venue-name" class="display hero-title"></h1>
+                <p class="hero-stats"><span><b id="n-met">0</b> met</span><span><b id="n-heard">0</b> heard</span></p>
+              </div>
+              <div class="drag-toggle" role="group" aria-label="What dragging does">
+                <button id="drag-orbit" class="seg" type="button" aria-pressed="true">Orbit</button>
+                <button id="drag-pan" class="seg" type="button" aria-pressed="false">Move</button>
+              </div>
+              <div id="tip" class="tip" hidden></div>
+              <div id="room-chips" class="room-chips"></div>
+              <p id="hint" class="hint"></p>
+              <button id="reset-view" class="ghost reset" type="button">Reset view</button>
+              <p id="webgl-error" class="webgl-error" hidden>This browser could not start WebGL, so the 3D room cannot draw. The other tabs still work.</p>
+            </section>
+            <aside id="panel" class="panel" aria-live="polite"><div id="panel-body"></div></aside>
+          </div>
         </section>
-        <aside id="panel" class="panel" aria-live="polite"><div id="panel-body"></div></aside>
+        <section id="view-people" class="view" role="tabpanel" aria-labelledby="tab-people" inert></section>
+        <section id="view-timeline" class="view" role="tabpanel" aria-labelledby="tab-timeline" inert></section>
+        <section id="view-topics" class="view" role="tabpanel" aria-labelledby="tab-topics" inert></section>
+        <section id="view-followups" class="view" role="tabpanel" aria-labelledby="tab-followups" inert></section>
       </main>
     </div>
 
     <dialog id="notes-dialog" class="dialog">
       <form id="notes-form" method="dialog">
         <div class="dialog-head">
-          <h2>Build the room from your notes</h2>
+          <h2 class="display">Build the room from your notes</h2>
           <button id="close-dialog" class="ghost" type="button" aria-label="Close">Close</button>
         </div>
         <p class="muted">Paste what you remember: who you met, who you only heard, what was said, where in the room. Include LinkedIn links you were given. Argon turns it into a room, and a checker rejects anything it made up.</p>
@@ -47,7 +79,7 @@
         <label for="image">Floor plan or room photo (optional)</label>
         <input id="image" type="file" accept="image/png,image/jpeg,image/webp" />
         <div class="dialog-actions">
-          <button id="build" class="primary" type="submit">Build room</button>
+          <button id="build" class="primary" type="submit"><span>Build room</span></button>
           <button id="use-sample" class="ghost" type="button">Reset to sample</button>
         </div>
         <div id="report" class="report" aria-live="polite"></div>
