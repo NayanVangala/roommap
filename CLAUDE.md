@@ -12,7 +12,7 @@ Nayan is learning by building. Keep changes small, say why in a sentence or two,
 
 ```bash
 npm run dev         # Vite on :5173, includes the /api dev endpoints
-npm test            # vitest: validator + extract loop (17 tests)
+npm test            # vitest: validator, extract loop, furniture facing (21 tests)
 npm run typecheck   # tsc --noEmit
 npm run build       # typecheck + vite build (frontend only, no /api)
 ```
@@ -38,8 +38,14 @@ event --> RoomView.setEvent() (src/scene.ts) + side panel (src/main.ts)
 | `src/validate.ts` | The checker. Schema + bounds + nobody inside furniture + spacing + grounding (names, quotes and LinkedIn URLs must appear in the notes). Messages are plain sentences fed straight back to the model. |
 | `server/extract.ts` | The propose/verify loop. `argonProposer` calls the Interactions API. `mockProposer` returns a sloppy answer on round 1 and a clean one after. |
 | `vite.config.ts` | Dev-only plugin serving `/api/status` and `/api/extract` so the key stays server-side. |
-| `src/scene.ts` | three.js scene: room, furniture boxes, people (met = solid, heard = ghost with sound rings), route line, picking, camera framing. |
-| `src/main.ts` | DOM UI: roster, person card, filters, notes dialog, round report. |
+| `src/scene.ts` | three.js view: lights, bloom, camera (orbit, move, WASD), intro animation, picking, route line with a walking light. Builds nothing itself, it places what `src/models/` makes. |
+| `src/models/parts.ts` | Tiny helpers (rounded box, cylinder, glow material) and `hash`/`pick` so a person always looks the same. |
+| `src/models/person.ts` | One person from primitives: legs, torso, arms, head, hair styles, glasses, cup, badge. Met = orange with a name badge. Heard = see-through ghost. Idle motion in `update(t)`. |
+| `src/models/venue.ts` | Floor planks, walls, string lights, dust, and one detailed model per feature kind (stage with truss and beams, bar with bottles, sofa, screen marquee, plant, door). `facingOf` turns furniture away from the nearest wall. |
+| `src/main.ts` | Wiring: tabs, filter chips, hero, side panel (roster + person card), notes dialog, intro curtain. |
+| `src/tabs.ts` | The four list tabs (People, Timeline, Topics, Follow-ups). Each is a plain function: event in, page out. |
+| `src/dom.ts` | `$`, `el`, `copyButton`, `countUp`, `retrigger`. Model text always goes in through `el(..., text)`. |
+| `src/style.css` | Whole look: warm black `#100904`, orange `#ff8539`, serif titles, mono labels. Inspired by Oryzo AI (Awwwards Site of the Month, Apr 2026). |
 | `src/sample.ts` | Fictional sample notes + matching event + `brokenSampleEvent()` for the mock loop. |
 
 ## Rules to keep
@@ -51,9 +57,21 @@ event --> RoomView.setEvent() (src/scene.ts) + side panel (src/main.ts)
 5. **Sample data is fictional.** Do not put real people's names, companies or profile URLs in `sample.ts`.
 6. **No recording.** No audio or video capture. Notes are typed by the user.
 
+## UI
+
+Five tabs: **Room** (3D map plus side panel), **People** (grid), **Timeline** (stats strip plus the night in order), **Topics** (who said what, grouped), **Follow-ups** (copyable messages). Same skeleton on the list tabs so none outranks another. The Met / Heard chips filter every tab.
+
+Moving in the room: drag orbits by default. The Orbit / Move switch makes a plain drag travel across the floor instead. Shift-drag and right-drag always do the other one. WASD and arrow keys glide. The view stays inside the room. Keys are ignored while typing or when the dialog is open.
+
+Motion: curtain intro, then furniture rises and people pop in while the camera swoops down (`RoomView.playIntro`). Tab pages fade and slide, cards rise in staggered. All of it stops under `prefers-reduced-motion`. The 3D loop pauses while another tab is showing.
+
 ## Status
 
-Verified (cloud sandbox, headless Chromium):
+Latest session (Oct 26): redesign, new tabs, detailed 3D models, movement. Checked in a real browser: all five tabs, close-up of a person, WASD, Move-mode drag, 390px wide with no horizontal scroll, no console errors. 21 tests pass, typecheck and build clean.
+
+**Argon is still unverified.** Key now works against Google (`gemini-4-argon` exists) but every call returns 402 "prepayment credits are depleted". Top up billing in AI Studio, then rerun the sample notes. The SDK hides Google's error text behind `{"httpMeta":...}`, so use curl against `/v1beta/interactions` to see the real message.
+
+Verified earlier (cloud sandbox, headless Chromium):
 - 17 unit tests pass: validator rules, loop behavior (feedback, round limit, non-JSON recovery, model errors).
 - Browser smoke run: scene renders, clicking people in 3D opens the right card, filters hide and unpick people, roster and Escape work, mock build shows round 1 with 3 problems then a clean round 2, no console errors, no horizontal scroll at 390px.
 
@@ -69,7 +87,7 @@ Verified (cloud sandbox, headless Chromium):
 3. Try a floor-plan photo or a photo of the room.
 4. Stream round updates to the UI (SSE) so the dialog shows each round as it happens instead of at the end.
 5. Edit mode: drag a person to fix their spot, then re-run the checker locally. Export/import the event as JSON.
-6. Demo polish: camera fly-through along the route, highlight a person's quote on the 3D label, a "tonight in one view" summary.
+6. Demo polish: camera fly-through along the route, highlight a person's quote on the 3D label. (The "tonight in one view" summary is now the Timeline tab.)
 7. Deploy for demos: `/api` only exists in the Vite dev server. Move `server/extract.ts` behind a serverless function (the file has no Vite dependency) and keep the mock path as the fallback if a live call fails.
 8. Add the Playwright smoke script as a repo script. The sandbox one clicks people via `window.__roommap.screenOf(id)`, a dev-only hook in `main.ts`.
 
@@ -77,4 +95,8 @@ Verified (cloud sandbox, headless Chromium):
 
 - Hidden people must not be pickable. The invisible hit cylinders use `MeshBasicMaterial({ visible: false })` and `pickables` is rebuilt whenever a filter changes, because `Raycaster` ignores `object.visible`.
 - The camera auto-frames the room on resize until the user touches the controls (`userMoved`). `Reset view` re-enables it.
+- Props on furniture must stay inside the feature's own footprint (w by d). The validator only knows the box, so a stool or lectern sticking out can clip a person standing next to it.
+- three 0.186 removed `PCFSoftShadowMap`. Use `PCFShadowMap`.
+- `Object3D.add()` with no arguments logs an error. Do not spread an empty array into it.
+- Facing uses `rotation.y = atan2(dx, dz)` because local +z is the front of every model.
 - The grid in `.app` needs `grid-template-columns: minmax(0, 1fr)` or the header can push the page wider than a phone screen.
