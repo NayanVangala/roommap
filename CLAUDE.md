@@ -44,8 +44,8 @@ event --> RoomView.setEvent() (src/scene.ts) + side panel (src/main.ts)
 | `src/models/venue.ts` | Floor planks, walls, string lights, dust, and one detailed model per feature kind (stage with truss and beams, bar with bottles, sofa, screen marquee, plant, door). `facingOf` turns furniture away from the nearest wall. |
 | `src/main.ts` | Wiring: tabs, filter chips, hero, side panel (roster + person card), notes dialog, intro curtain. |
 | `src/tabs.ts` | The four list tabs (People, Timeline, Topics, Follow-ups). Each is a plain function: event in, page out. |
-| `src/dom.ts` | `$`, `el`, `copyButton`, `countUp`, `retrigger`. Model text always goes in through `el(..., text)`. |
-| `src/style.css` | Whole look: warm black `#100904`, orange `#ff8539`, serif titles, mono labels. Inspired by Oryzo AI (Awwwards Site of the Month, Apr 2026). |
+| `src/dom.ts` | `$`, `el`, `pad`, drawn icons (`icon`, `iconButton`) and `copyButton`. Model text always goes in through `el(..., text)`. |
+| `src/style.css` | Whole look: cool graphite `#0e1013`, one calm blue `#6ea8fe`, one sans family (Hanken Grotesk). Solid surfaces and 1px lines, no glow or blur. Filled dot = met, hollow dot = heard. |
 | `src/sample.ts` | Fictional sample notes + matching event + `brokenSampleEvent()` for the mock loop. |
 
 ## Rules to keep
@@ -59,11 +59,13 @@ event --> RoomView.setEvent() (src/scene.ts) + side panel (src/main.ts)
 
 ## UI
 
-Five tabs: **Room** (3D map plus side panel), **People** (grid), **Timeline** (stats strip plus the night in order), **Topics** (who said what, grouped), **Follow-ups** (copyable messages). Same skeleton on the list tabs so none outranks another. The Met / Heard chips filter every tab.
+Five tabs: **Room** (3D map plus sidebar), **People** (table), **Timeline** (the night in order), **Topics** (who said what, grouped), **Follow-ups** (copyable messages). Same header on every list tab (title, one line, Met / Heard filter) so none outranks another. The filter applies to every tab and an empty result offers "Show everyone".
 
-Moving in the room: drag orbits by default. The Orbit / Move switch makes a plain drag travel across the floor instead. Shift-drag and right-drag always do the other one. WASD and arrow keys glide. The view stays inside the room. Keys are ignored while typing or when the dialog is open.
+Moving in the room: one mode. A plain drag travels across the floor and stays inside the room. On a touchpad: swipe two fingers up or down to tilt, sideways to rotate, pinch to zoom (swipe directions follow your scroll direction setting). Safari also reports a twist, so twisting rotates there. A mouse wheel is spotted by its whole notches and zooms instead. Right-drag or Shift-drag also rotate. WASD and arrow keys glide, and are ignored while typing or when the dialog is open. On touch screens one finger moves, and two fingers rotate and zoom (Safari reports those as gestures instead, so they are not handled twice).
 
-Motion: curtain intro, then furniture rises and people pop in while the camera swoops down (`RoomView.playIntro`). Tab pages fade and slide, cards rise in staggered. All of it stops under `prefers-reduced-motion`. The 3D loop pauses while another tab is showing.
+Motion: a short intro screen, then furniture rises and people pop in while the camera swoops down (`RoomView.playIntro`). Tab pages fade, rows rise in a short stagger. All of it stops under `prefers-reduced-motion`. The 3D loop pauses while another tab is showing.
+
+Copy rules: say each thing once, name the action on the button, no taglines. Errors from the model call go through `friendlyError` in `server/extract.ts` so a 402 reads "Argon has no credits left" instead of the SDK's raw text.
 
 ## Status
 
