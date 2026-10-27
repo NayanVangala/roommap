@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SAMPLE_EVENT, SAMPLE_NOTES } from '../src/sample';
-import { buildUserPrompt, extractEvent, parseJson, type Proposer } from './extract';
+import { buildUserPrompt, extractEvent, friendlyError, parseJson, type Proposer } from './extract';
 
 describe('extractEvent', () => {
   it('mock mode: round 1 has 3 problems, round 2 is clean', async () => {
@@ -57,5 +57,18 @@ describe('extractEvent', () => {
 describe('parseJson', () => {
   it('strips markdown fences', () => {
     expect(parseJson('```json\n{"a":1}\n```')).toEqual({ a: 1 });
+  });
+});
+
+describe('friendlyError', () => {
+  it('turns the SDK status into something a person can act on', () => {
+    expect(friendlyError(new Error('402 API error occurred: {"httpMeta":{}}'))).toMatch(/no credits left/);
+    expect(friendlyError(new Error('429 API error occurred'))).toMatch(/rate limited/);
+    expect(friendlyError(new Error('400 API error occurred'))).toMatch(/GEMINI_API_KEY/);
+  });
+
+  it('leaves other messages alone', () => {
+    expect(friendlyError(new Error('quota exceeded'))).toBe('quota exceeded');
+    expect(friendlyError('nope')).toBe('The model call failed.');
   });
 });

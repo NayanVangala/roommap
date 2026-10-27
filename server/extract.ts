@@ -139,6 +139,31 @@ export interface ExtractOptions {
   maxRounds?: number;
 }
 
+/**
+ * The SDK starts its message with the HTTP status and hides Google's own text behind {"httpMeta":...}.
+ * Turn the status into a sentence the person can act on. Anything else passes through unchanged.
+ */
+export function friendlyError(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  switch (/^(\d{3})\b/.exec(message)?.[1]) {
+    case '400':
+    case '401':
+    case '403':
+      return 'Google rejected the request. Check that GEMINI_API_KEY in .env is valid, then try again.';
+    case '402':
+      return 'Argon has no credits left. Add billing in Google AI Studio, then try again.';
+    case '429':
+      return 'Argon is rate limited right now. Wait a minute and try again.';
+    case '500':
+    case '502':
+    case '503':
+    case '504':
+      return 'Argon is having trouble on the Google side. Try again shortly.';
+    default:
+      return message || 'The model call failed.';
+  }
+}
+
 export async function extractEvent(opts: ExtractOptions, proposer?: Proposer): Promise<ExtractResult> {
   const mode: ExtractResult['mode'] = opts.apiKey || proposer ? 'argon' : 'mock';
   const rounds: Round[] = [];
@@ -172,7 +197,7 @@ export async function extractEvent(opts: ExtractOptions, proposer?: Proposer): P
     try {
       raw = await propose({ notes: opts.notes, image: opts.image, round: n, previous, problems });
     } catch (error) {
-      return fail(error instanceof Error ? error.message : 'The model call failed.');
+      return fail(friendlyError(error));
     }
 
     let parsed: unknown;
