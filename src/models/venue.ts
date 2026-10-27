@@ -53,8 +53,8 @@ function plankTexture(): THREE.CanvasTexture {
     const rows = 12;
     const rowH = h / rows;
     for (let r = 0; r < rows; r++) {
-      const light = 22 + rand(r * 3.1) * 10;
-      ctx.fillStyle = `hsl(${21 + rand(r * 1.7) * 6}, 38%, ${light}%)`;
+      const light = 27 + rand(r * 3.1) * 9;
+      ctx.fillStyle = `hsl(${212 + rand(r * 1.7) * 8}, 7%, ${light}%)`;
       ctx.fillRect(0, r * rowH, w, rowH);
       for (let i = 0; i < 26; i++) {
         ctx.fillStyle = `rgba(0,0,0,${0.05 + rand(r * 40 + i) * 0.07})`;
@@ -75,24 +75,23 @@ function screenTexture(name: string): THREE.CanvasTexture {
     for (let k = 0; k < 2; k++) {
       const x0 = k * half;
       const g = ctx.createLinearGradient(x0, 0, x0 + half, h);
-      g.addColorStop(0, '#1a0c05');
-      g.addColorStop(0.5, '#3a1a08');
-      g.addColorStop(1, '#1a0c05');
+      g.addColorStop(0, '#0d1117');
+      g.addColorStop(0.5, '#182231');
+      g.addColorStop(1, '#0d1117');
       ctx.fillStyle = g;
       ctx.fillRect(x0, 0, half, h);
-      ctx.fillStyle = '#ff8539';
-      ctx.font = '500 26px "DM Mono", ui-monospace, monospace';
-      ctx.fillText('LIVE  /  ROOMMAP', x0 + 40, 56);
-      let size = 190;
-      ctx.font = `italic ${size}px "Bodoni Moda", Georgia, serif`;
+      let size = 150;
+      ctx.font = `600 ${size}px "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif`;
       while (ctx.measureText(name).width > half - 90 && size > 40) {
         size -= 8;
-        ctx.font = `italic ${size}px "Bodoni Moda", Georgia, serif`;
+        ctx.font = `600 ${size}px "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif`;
       }
-      ctx.fillStyle = '#fff1e2';
+      ctx.fillStyle = '#eef2f7';
       ctx.fillText(name, x0 + 40, h / 2 + size * 0.34);
+      ctx.fillStyle = '#6ea8fe';
+      ctx.fillRect(x0 + 40, h / 2 + size * 0.34 + 28, 120, 6);
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillStyle = 'rgba(0,0,0,0.16)';
     for (let y = 0; y < h; y += 6) ctx.fillRect(0, y, w, 2);
   });
   texture.wrapS = THREE.RepeatWrapping;
@@ -139,8 +138,8 @@ export function buildWalls(venue: Venue): THREE.Group {
   const w2 = venue.width / 2;
   const d2 = venue.depth / 2;
   const wallM = std(COLORS.wall, { transparent: true, opacity: 0.55, depthWrite: false });
-  const capM = std(0x6b4a36, { roughness: 0.5, metalness: 0.2 });
-  const strip = glow(COLORS.met, 1.8);
+  const capM = std(0x4a515b, { roughness: 0.5, metalness: 0.3 });
+  const strip = glow(COLORS.lamp, 0.5);
 
   // [length, thickness, centre x, centre z, runs along x?]
   const sides: Array<[number, number, number, number, boolean]> = [
@@ -168,7 +167,7 @@ export function buildWalls(venue: Venue): THREE.Group {
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
       g.add(rbox(0.28, 1.9, 0.28, capM, sx * (w2 + t / 2), 0.95, sz * (d2 + t / 2), 0.03));
-      g.add(rbox(0.18, 0.05, 0.18, glow(COLORS.warm, 2.2), sx * (w2 + t / 2), 1.92, sz * (d2 + t / 2), 0.015, false));
+      g.add(rbox(0.18, 0.05, 0.18, glow(COLORS.lamp, 1.1), sx * (w2 + t / 2), 1.92, sz * (d2 + t / 2), 0.015, false));
     }
   }
   return g;
@@ -178,8 +177,8 @@ export function buildWalls(venue: Venue): THREE.Group {
 export function buildStringLights(venue: Venue): THREE.Group {
   const g = new THREE.Group();
   const lines = venue.depth > 10 ? 3 : 2;
-  const wire = new THREE.LineBasicMaterial({ color: 0x1a120c });
-  const pole = std(0x1a120c, { metalness: 0.4 });
+  const wire = new THREE.LineBasicMaterial({ color: 0x16191d });
+  const pole = std(0x16191d, { metalness: 0.4 });
   const w2 = venue.width / 2 + 0.07;
   const positions: number[] = [];
   for (let i = 0; i < lines; i++) {
@@ -197,7 +196,7 @@ export function buildStringLights(venue: Venue): THREE.Group {
   }
   const bulbs = new THREE.BufferGeometry();
   bulbs.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  g.add(new THREE.Points(bulbs, new THREE.PointsMaterial({ map: radialTexture(), color: COLORS.warm, size: 0.5, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+  g.add(new THREE.Points(bulbs, new THREE.PointsMaterial({ map: radialTexture(), color: COLORS.lamp, size: 0.5, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
   return g;
 }
 
@@ -212,7 +211,7 @@ export function buildDust(venue: Venue): THREE.Points {
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  return new THREE.Points(geometry, new THREE.PointsMaterial({ map: radialTexture(), color: 0xffc9a0, size: 0.1, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+  return new THREE.Points(geometry, new THREE.PointsMaterial({ map: radialTexture(), color: 0xcdd9ee, size: 0.1, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
 }
 
 // ---- furniture ----------------------------------------------------------------
@@ -247,13 +246,13 @@ const BOTTLES = [0x6b3a14, 0x2d5a34, 0x8fb7c9, 0xb04a2e, 0xe8dfc8];
 const stage: Maker = (g, L, D) => {
   const H = 0.45;
   g.add(rbox(L, H, D, std(COLORS.feature.stage, { roughness: 0.8 }), 0, H / 2, 0, 0.03));
-  g.add(rbox(L - 0.12, 0.03, D - 0.12, std(0x160d0a, { roughness: 0.95 }), 0, H + 0.015, 0, 0.01, false));
-  const led = glow(COLORS.met, 2.4);
+  g.add(rbox(L - 0.12, 0.03, D - 0.12, std(0x0d0f12, { roughness: 0.95 }), 0, H + 0.015, 0, 0.01, false));
+  const led = glow(COLORS.met, 1.8);
   g.add(rbox(L, 0.035, 0.03, led, 0, H - 0.09, D / 2, 0.01, false));
   for (const s of [-1, 1]) g.add(rbox(0.03, 0.035, D, led, s * (L / 2), H - 0.09, 0, 0.01, false));
 
-  const metal = std(0x1a1512, { metalness: 0.7, roughness: 0.35 });
-  const speakerM = std(0x15110e, { roughness: 0.6 });
+  const metal = std(0x16191d, { metalness: 0.7, roughness: 0.35 });
+  const speakerM = std(0x14171a, { roughness: 0.6 });
   for (const s of [-1, 1]) {
     const speaker = new THREE.Group();
     speaker.position.set(s * (L / 2 - 0.45), H, -D / 2 + 0.4);
@@ -276,9 +275,9 @@ const stage: Maker = (g, L, D) => {
   g.add(rbox(L - 0.1, 0.16, 0.16, metal, 0, trussY, -D / 2 + 0.2, 0.02));
   const beamMat = new THREE.MeshBasicMaterial({
     map: gradientTexture('#ffffff', '#000000'),
-    color: COLORS.met,
+    color: COLORS.lamp,
     transparent: true,
-    opacity: 0.32,
+    opacity: 0.2,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
@@ -291,22 +290,22 @@ const stage: Maker = (g, L, D) => {
     beam.position.set(x, (trussY - 0.3) / 2 + 0.2, -D / 2 + 0.3);
     g.add(beam);
   }
-  g.add(lightPool(L * 1.05, D * 1.05, COLORS.met, 0.28, H + 0.04));
+  g.add(lightPool(L * 1.05, D * 1.05, COLORS.lamp, 0.2, H + 0.04));
   return H;
 };
 
 const bar: Maker = (g, L, D) => {
   const H = 1.05;
   const wood = std(COLORS.feature.bar, { roughness: 0.55 });
-  const slat = std(0x6b4a38, { roughness: 0.5 });
+  const slat = std(0x555c66, { roughness: 0.5 });
   const cz = D / 2 - 0.38;
   g.add(rbox(L, H - 0.05, 0.76, wood, 0, (H - 0.05) / 2, cz, 0.02));
   const slats = Math.floor(L / 0.22);
   for (let i = 0; i < slats; i++) g.add(rbox(0.1, H - 0.22, 0.03, slat, -L / 2 + (L * (i + 0.5)) / slats, (H - 0.05) / 2, D / 2 - 0.005, 0.01, false));
-  g.add(rbox(L + 0.04, 0.05, 0.84, std(0x1a1210, { roughness: 0.18, metalness: 0.35 }), 0, H - 0.025, cz, 0.02));
+  g.add(rbox(L + 0.04, 0.05, 0.84, std(0x15181c, { roughness: 0.18, metalness: 0.35 }), 0, H - 0.025, cz, 0.02));
 
   // back bar: low cabinet, mirror, two shelves of bottles
-  g.add(rbox(L, 0.95, 0.45, std(0x241812), 0, 0.475, -D / 2 + 0.25, 0.02));
+  g.add(rbox(L, 0.95, 0.45, std(0x1b1e23), 0, 0.475, -D / 2 + 0.25, 0.02));
   g.add(rbox(L - 0.1, 1.2, 0.03, std(0x2a2a30, { metalness: 0.9, roughness: 0.12 }), 0, 1.55, -D / 2 + 0.04, 0.01, false));
   const glassMats = BOTTLES.map((c) => std(c, { transparent: true, opacity: 0.85, roughness: 0.15 }));
   for (const [row, y] of [1.3, 1.75].entries()) {
@@ -328,7 +327,7 @@ const bar: Maker = (g, L, D) => {
   for (let i = 0; i < Math.floor(L / 0.9); i++) g.add(cyl(0.035, 0.028, 0.1, std(0xdfe8ee, { transparent: true, opacity: 0.55, roughness: 0.1 }), -L / 2 + 0.6 + i * 0.9, H + 0.05, cz + 0.12, 12, false));
 
   // pendant lights
-  const shadeM = std(0x15100c, { side: THREE.DoubleSide, metalness: 0.4 });
+  const shadeM = std(0x16191d, { side: THREE.DoubleSide, metalness: 0.4 });
   const pendants = Math.max(3, Math.round(L / 1.4));
   for (let i = 0; i < pendants; i++) {
     const x = -L / 2 + (L * (i + 0.5)) / pendants;
@@ -336,19 +335,19 @@ const bar: Maker = (g, L, D) => {
     const dome = new THREE.Mesh(new THREE.SphereGeometry(0.16, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), shadeM);
     dome.position.set(x, 2.45, cz);
     g.add(dome);
-    g.add(ball(0.06, glow(COLORS.warm, 3.2), x, 2.42, cz));
+    g.add(ball(0.06, glow(COLORS.lamp, 3.2), x, 2.42, cz));
   }
-  g.add(lightPool(L, D * 1.4, COLORS.warm, 0.3, 0.014));
+  g.add(lightPool(L, D * 1.4, COLORS.lamp, 0.3, 0.014));
   return 1.12;
 };
 
 const table: Maker = (g, L, D) => {
   const r = Math.min(L, D) / 2;
-  const metal = std(0x15110e, { metalness: 0.7, roughness: 0.35 });
+  const metal = std(0x16191d, { metalness: 0.7, roughness: 0.35 });
   g.add(cyl(0.2, 0.24, 0.04, metal, 0, 0.02, 0, 24));
   g.add(cyl(0.04, 0.05, 1, metal, 0, 0.5, 0, 12));
   g.add(cyl(r, r, 0.05, std(COLORS.feature.table, { roughness: 0.35, metalness: 0.15 }), 0, 1.03, 0, 32));
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.012, 8, 40), std(0xb88b5a, { metalness: 0.8, roughness: 0.3 }));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(r, 0.012, 8, 40), std(0xaab2bd, { metalness: 0.8, roughness: 0.3 }));
   rim.rotation.x = Math.PI / 2;
   rim.position.y = 1.055;
   g.add(rim);
@@ -357,13 +356,13 @@ const table: Maker = (g, L, D) => {
   g.add(cyl(0.035, 0.028, 0.1, glass, r * 0.4, 1.105, -r * 0.3, 12, false));
   g.add(cyl(0.03, 0.03, 0.03, std(0xf0e6d8), 0, 1.07, 0, 12, false));
   g.add(ball(0.014, glow(0xffb36b, 5), 0, 1.1, 0, 1, 1.6, 1));
-  g.add(lightPool(r * 4, r * 4, COLORS.warm, 0.2, 0.014));
+  g.add(lightPool(r * 4, r * 4, COLORS.lamp, 0.2, 0.014));
   return 1.06;
 };
 
 const booth: Maker = (g, L, D) => {
   const teal = COLORS.feature.booth;
-  const cream = std(0xe9e2d6, { roughness: 0.4 });
+  const cream = std(0xe6e9ee, { roughness: 0.4 });
   g.add(rbox(L, 1.05, 0.6, std(teal, { roughness: 0.5 }), 0, 0.525, D / 2 - 0.3, 0.03));
   g.add(rbox(L + 0.04, 0.04, 0.66, cream, 0, 1.07, D / 2 - 0.3, 0.015));
   g.add(rbox(L, 2.3, 0.08, std(0x14211f), 0, 1.15, -D / 2 + 0.06, 0.02));
@@ -372,11 +371,11 @@ const booth: Maker = (g, L, D) => {
   ring.position.set(0, 1.6, -D / 2 + 0.14);
   g.add(ring);
   for (const s of [-1, 1]) {
-    g.add(rbox(0.55, 0.05, 0.22, std(0x15100c, { metalness: 0.5 }), s * (L / 2 - 0.35), 0.025, -0.1, 0.01));
+    g.add(rbox(0.55, 0.05, 0.22, std(0x16191d, { metalness: 0.5 }), s * (L / 2 - 0.35), 0.025, -0.1, 0.01));
     g.add(rbox(0.5, 1.8, 0.03, cream, s * (L / 2 - 0.35), 0.98, -0.1, 0.01));
-    g.add(rbox(0.5, 0.45, 0.035, glow(0xff8539, 0.9), s * (L / 2 - 0.35), 1.45, -0.09, 0.01, false));
+    g.add(rbox(0.5, 0.45, 0.035, glow(COLORS.met, 0.8), s * (L / 2 - 0.35), 1.45, -0.09, 0.01, false));
   }
-  for (let i = 0; i < 4; i++) g.add(rbox(0.28, 0.012, 0.2, std([0xf6ece1, 0xff8539, 0x4fb3a8, 0xf6ece1][i] as number), -0.6 + 0.02 * i, 1.1 + i * 0.013, D / 2 - 0.3, 0.004, false));
+  for (let i = 0; i < 4; i++) g.add(rbox(0.28, 0.012, 0.2, std([0xe6e9ee, COLORS.met, 0x4fb3a8, 0xe6e9ee][i] as number), -0.6 + 0.02 * i, 1.1 + i * 0.013, D / 2 - 0.3, 0.004, false));
   g.add(lightPool(L * 1.2, D * 1.6, 0x4fb3a8, 0.22, 0.014));
   return 2.2;
 };
@@ -396,14 +395,14 @@ const sofa: Maker = (g, L, D) => {
   }
   g.add(rbox(L, 0.66, D * 0.26, dark, 0, 0.62, -D / 2 + D * 0.13, 0.07));
   for (const s of [-1, 1]) g.add(rbox(0.25, 0.52, D, fabric, s * (L / 2 - 0.125), 0.5, 0, 0.08));
-  const accents = [0xff8539, 0xf6ece1, 0x4fb3a8];
+  const accents = [COLORS.met, 0xe6e9ee, 0x4fb3a8];
   accents.forEach((c, i) => {
     const pillow = rbox(0.34, 0.34, 0.1, std(c, { roughness: 0.9 }), -L / 2 + 0.7 + i * (L / 3), 0.68, -D / 2 + 0.55, 0.05);
     pillow.rotation.set(-0.35, (i - 1) * 0.35, (i - 1) * 0.2);
     g.add(pillow);
   });
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.035, 0.03, 0.1, std(0x15100c, { metalness: 0.5 }), sx * (L / 2 - 0.15), 0.05, sz * (D / 2 - 0.15), 8, false));
-  g.add(rbox(L + 0.6, 0.012, D + 0.8, std(0x4a2e22, { roughness: 1 }), 0, 0.006, 0.4, 0.004, false));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.035, 0.03, 0.1, std(0x16191d, { metalness: 0.5 }), sx * (L / 2 - 0.15), 0.05, sz * (D / 2 - 0.15), 8, false));
+  g.add(rbox(L + 0.6, 0.012, D + 0.8, std(0x2a2f36, { roughness: 1 }), 0, 0.006, 0.4, 0.004, false));
   return 1;
 };
 
@@ -426,10 +425,10 @@ const screen: Maker = (g, L, D, ctx) => {
 
 const plant: Maker = (g, L, D, ctx) => {
   const r = Math.min(L, D) / 2;
-  const pot = std(0xb0653f, { roughness: 0.8 });
+  const pot = std(0x70767e, { roughness: 0.8 });
   g.add(cyl(r * 0.62, r * 0.46, 0.4, pot, 0, 0.2, 0, 24));
   g.add(cyl(r * 0.68, r * 0.68, 0.05, pot, 0, 0.42, 0, 24));
-  g.add(cyl(r * 0.58, r * 0.58, 0.02, std(0x1a120c), 0, 0.44, 0, 20, false));
+  g.add(cyl(r * 0.58, r * 0.58, 0.02, std(0x16191d), 0, 0.44, 0, 20, false));
   const leafMats = [std(0x3f7a4d, { roughness: 0.7 }), std(0x2f6a40, { roughness: 0.7 }), std(0x56903c, { roughness: 0.7 })];
   const tilters: Array<{ node: THREE.Group; base: number; seed: number }> = [];
   for (let i = 0; i < 10; i++) {
@@ -451,7 +450,7 @@ const plant: Maker = (g, L, D, ctx) => {
 };
 
 const door: Maker = (g, L, D) => {
-  const frame = std(0x1a120d, { roughness: 0.6 });
+  const frame = std(0x16191d, { roughness: 0.6 });
   for (const s of [-1, 1]) g.add(rbox(0.1, 2.4, D, frame, s * (L / 2 - 0.05), 1.2, 0, 0.02));
   g.add(rbox(L, 0.12, D, frame, 0, 2.46, 0, 0.02));
   const glass = std(0xbfe3ff, { transparent: true, opacity: 0.14, roughness: 0.05, metalness: 0.4, depthWrite: false });
@@ -461,11 +460,11 @@ const door: Maker = (g, L, D) => {
     g.add(cyl(0.012, 0.012, 0.5, std(0xcfcfd4, { metalness: 0.9, roughness: 0.2 }), s * 0.07, 1.1, 0.04, 8, false));
   }
   g.add(rbox(0.42, 0.14, 0.05, glow(0x3ddc84, 1.8), 0, 2.68, 0, 0.02, false));
-  g.add(rbox(L - 0.3, 0.02, 1, std(0x1b1410), 0, 0.01, D / 2 + 0.55, 0.01, false));
+  g.add(rbox(L - 0.3, 0.02, 1, std(0x1b1e23), 0, 0.01, D / 2 + 0.55, 0.01, false));
   // light spilling in from the street, brightest at the door
   const spill = new THREE.Mesh(
     new THREE.PlaneGeometry(L * 1.3, 3.4),
-    new THREE.MeshBasicMaterial({ map: gradientTexture('#ffffff', '#000000'), color: 0xffe0b8, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ map: gradientTexture('#ffffff', '#000000'), color: 0xe6eeff, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }),
   );
   spill.rotation.x = -Math.PI / 2;
   spill.position.set(0, 0.02, D / 2 + 1.7);

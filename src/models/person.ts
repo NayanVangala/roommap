@@ -48,7 +48,7 @@ export function buildPerson(p: Person, color: number): Built {
   const hairM = ghostHead ?? std(pick(HAIR, seed, 2), { roughness: 0.9 });
   const pantsM = ghostBody ?? std(pick(PANTS, seed, 3), { roughness: 0.85 });
   const shoeM = ghostBody ?? std(pick(SHOES, seed, 4), { roughness: 0.7 });
-  const darkM = ghostBody ?? std(0x120c08, { roughness: 0.5 });
+  const darkM = ghostBody ?? std(0x101216, { roughness: 0.5 });
 
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -97,7 +97,7 @@ export function buildPerson(p: Person, color: number): Built {
   if (holdsCup) {
     cupArm.rotation.x = -1.45;
     // Turn the cup back so it stands upright in world space.
-    const cup = cyl(0.034, 0.027, 0.1, ghostBody ?? std(0xf4efe6, { roughness: 0.4 }), 0, -0.29, 0.05, 14);
+    const cup = cyl(0.034, 0.027, 0.1, ghostBody ?? std(0xeef1f5, { roughness: 0.4 }), 0, -0.29, 0.05, 14);
     cup.rotation.x = 1.45;
     cupArm.add(cup);
   }
@@ -152,13 +152,13 @@ export function buildPerson(p: Person, color: number): Built {
 
   // name badge on a lanyard, only for people you met
   if (!ghost && p.kind === 'met') {
-    const strap = std(0x3a1d0c, { roughness: 0.8 });
+    const strap = std(0x23324a, { roughness: 0.8 });
     for (const s of [-1, 1]) {
       const band = rbox(0.012, 0.3, 0.012, strap, s * 0.07, 1.34, 0.117, 0.004, false);
       band.rotation.z = s * -0.3;
       body.add(band);
     }
-    body.add(rbox(0.078, 0.1, 0.01, std(0xf6ece1, { roughness: 0.5 }), 0, 1.2, 0.121, 0.004, false));
+    body.add(rbox(0.078, 0.1, 0.01, std(0xe9edf2, { roughness: 0.5 }), 0, 1.2, 0.121, 0.004, false));
     body.add(rbox(0.078, 0.026, 0.012, std(color, { emissive: color, emissiveIntensity: 0.6 }), 0, 1.235, 0.123, 0.004, false));
   }
 
