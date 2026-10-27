@@ -3,27 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="description" content="Walk back through a networking event in 3D: the people you met and the people you heard, placed where they were." />
-    <meta name="theme-color" content="#100904" />
+    <meta name="description" content="Roommap turns your networking notes into a 3D map of the room: who you met, who you heard, and what to send them." />
+    <meta name="theme-color" content="#0e1013" />
     <title>Roommap</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23100904'/%3E%3Ccircle cx='16' cy='16' r='7' fill='%23ff8539'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230e1013'/%3E%3Crect x='6' y='6' width='20' height='20' rx='5' fill='none' stroke='%23e8eaed' stroke-width='2'/%3E%3Ccircle cx='12.5' cy='13' r='2.4' fill='%236ea8fe'/%3E%3Ccircle cx='19.5' cy='19.5' r='2.4' fill='%23b7bfca' fill-opacity='.6'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=DM+Mono:wght@400;500&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="intro" class="intro" aria-hidden="true">
-      <p class="intro-word display">Roommap<span>.</span></p>
-      <p class="intro-sub">Mapping the room</p>
-      <span class="intro-bar"></span>
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.75" />
+          <circle cx="9" cy="9.5" r="1.9" fill="var(--met)" />
+          <circle cx="15.5" cy="14.5" r="1.9" fill="var(--heard)" fill-opacity="0.6" />
+        </svg>
+        <span>Roommap</span>
+      </div>
     </div>
 
     <div class="app">
       <header class="top">
-        <div class="logo display">Roommap<span>.</span></div>
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" fill="none" stroke="currentColor" stroke-width="1.75" />
+            <circle cx="9" cy="9.5" r="1.9" fill="var(--met)" />
+            <circle cx="15.5" cy="14.5" r="1.9" fill="var(--heard)" fill-opacity="0.6" />
+          </svg>
+          <span>Roommap</span>
+        </div>
         <nav id="tabs" class="tabs" role="tablist" aria-label="Views">
           <span id="tab-pill" class="tab-pill" aria-hidden="true"></span>
           <button id="tab-room" class="tab" role="tab" type="button" data-view="room" aria-selected="true" aria-controls="view-room">Room</button>
@@ -33,8 +42,8 @@
           <button id="tab-followups" class="tab" role="tab" type="button" data-view="followups" aria-selected="false" aria-controls="view-followups" tabindex="-1">Follow-ups</button>
         </nav>
         <div class="actions">
-          <span id="mode" class="mode" title="Whether Argon is connected"></span>
-          <button id="open-notes" class="primary" type="button"><span>Build from notes</span></button>
+          <span id="mode" class="mode"></span>
+          <button id="open-notes" class="btn primary" type="button">Build from notes</button>
         </div>
       </header>
 
@@ -42,22 +51,17 @@
         <section id="view-room" class="view is-active" role="tabpanel" aria-labelledby="tab-room">
           <div class="room">
             <section id="stage" class="stage" aria-label="3D room">
-              <div class="hero">
-                <p id="source" class="eyebrow"></p>
-                <h1 id="venue-name" class="display hero-title"></h1>
-                <p class="hero-stats"><span><b id="n-met">0</b> met</span><span><b id="n-heard">0</b> heard</span></p>
-              </div>
-              <div class="drag-toggle" role="group" aria-label="What dragging does">
-                <button id="drag-orbit" class="seg" type="button" aria-pressed="true">Orbit</button>
-                <button id="drag-pan" class="seg" type="button" aria-pressed="false">Move</button>
+              <div class="stage-head">
+                <h1 id="venue-name"></h1>
+                <p id="source" class="sub"></p>
               </div>
               <div id="tip" class="tip" hidden></div>
               <div id="room-chips" class="room-chips"></div>
               <p id="hint" class="hint"></p>
-              <button id="reset-view" class="ghost reset" type="button">Reset view</button>
+              <button id="reset-view" class="btn sm reset" type="button">Reset view</button>
               <p id="webgl-error" class="webgl-error" hidden>This browser could not start WebGL, so the 3D room cannot draw. The other tabs still work.</p>
             </section>
-            <aside id="panel" class="panel" aria-live="polite"><div id="panel-body"></div></aside>
+            <aside id="panel" class="panel" aria-label="People" aria-live="polite"><div id="panel-body"></div></aside>
           </div>
         </section>
         <section id="view-people" class="view" role="tabpanel" aria-labelledby="tab-people" inert></section>
@@ -67,20 +71,20 @@
       </main>
     </div>
 
-    <dialog id="notes-dialog" class="dialog">
+    <dialog id="notes-dialog" class="dialog" aria-labelledby="dialog-title">
       <form id="notes-form" method="dialog">
         <div class="dialog-head">
-          <h2 class="display">Build the room from your notes</h2>
-          <button id="close-dialog" class="ghost" type="button" aria-label="Close">Close</button>
+          <h2 id="dialog-title">Build from notes</h2>
+          <button id="close-dialog" class="btn icon-btn" type="button" aria-label="Close"></button>
         </div>
-        <p class="muted">Paste what you remember: who you met, who you only heard, what was said, where in the room. Include LinkedIn links you were given. Argon turns it into a room, and a checker rejects anything it made up.</p>
+        <p class="muted">Paste your notes from the event: who you spoke to, who you only heard, what was said and where they stood. Argon drafts the room, and a checker rejects any name, quote or link that is not in your notes.</p>
         <label for="notes">Notes</label>
         <textarea id="notes" rows="12" spellcheck="true"></textarea>
-        <label for="image">Floor plan or room photo (optional)</label>
+        <label for="image">Floor plan or room photo <span class="optional">(optional)</span></label>
         <input id="image" type="file" accept="image/png,image/jpeg,image/webp" />
         <div class="dialog-actions">
-          <button id="build" class="primary" type="submit"><span>Build room</span></button>
-          <button id="use-sample" class="ghost" type="button">Reset to sample</button>
+          <button id="build" class="btn primary" type="submit">Build room</button>
+          <button id="use-sample" class="btn" type="button">Use sample notes</button>
         </div>
         <div id="report" class="report" aria-live="polite"></div>
       </form>

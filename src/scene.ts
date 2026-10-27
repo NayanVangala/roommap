@@ -50,6 +50,9 @@ const INTRO_SECONDS = 2.4;
 const WALK_KEYS = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'];
 /** Metres per second when a walk key is held. */
 const WALK_SPEED = 6;
+const UP = new THREE.Vector3(0, 1, 0);
+/** Closest to straight-down the camera may tilt, in radians from vertical. Exactly 0 would flip the view. */
+const MIN_TILT = 0.12;
 
 const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
 const easeOutBack = (x: number) => 1 + 2.2 * (x - 1) ** 3 + 1.2 * (x - 1) ** 2;
@@ -85,8 +88,8 @@ function makeLabel(text: string, opts: { height: number; color?: string; weight?
   canvas.height = h;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('2D canvas is not available.');
-  ctx.fillStyle = 'rgba(16, 9, 4, 0.82)';
-  ctx.strokeStyle = 'rgba(255, 240, 225, 0.16)';
+  ctx.fillStyle = 'rgba(14, 16, 19, 0.88)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.roundRect(1, 1, canvas.width - 2, h - 2, h / 2);
@@ -97,7 +100,7 @@ function makeLabel(text: string, opts: { height: number; color?: string; weight?
     ctx.beginPath();
     ctx.arc(chipPad + chipD / 2, h / 2, chipD / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#1a0d04';
+    ctx.fillStyle = '#0b1220';
     ctx.font = `500 ${15 * scale}px "DM Mono", ui-monospace, monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -106,7 +109,7 @@ function makeLabel(text: string, opts: { height: number; color?: string; weight?
   ctx.font = font;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = opts.color ?? '#f6ece1';
+  ctx.fillStyle = opts.color ?? '#e8eaed';
   ctx.fillText(text, left, h / 2 + scale);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -160,6 +163,8 @@ export class RoomView {
   private readonly heading = new THREE.Vector3();
   private readonly stopListening = new AbortController();
   private lastT = 0;
+  /** When the last touchpad scroll arrived. Used to tell a touchpad from a mouse wheel. */
+  private lastTouchpadAt = -1e9;
 
   constructor(private readonly container: HTMLElement, private readonly hooks: ViewHooks) {
     this.canvas = document.createElement('canvas');
@@ -183,8 +188,8 @@ export class RoomView {
     this.scene.environmentIntensity = 0.3;
     pmrem.dispose();
 
-    this.scene.add(new THREE.HemisphereLight(0xffe2c6, 0x1a0f08, 0.9));
-    const key = new THREE.DirectionalLight(0xffe8d0, 1.5);
+    this.scene.add(new THREE.HemisphereLight(0xdfe6f5, 0x15181c, 0.9));
+    const key = new THREE.DirectionalLight(0xf2f5fb, 1.5);
     key.position.set(8, 16, 10);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
@@ -229,7 +234,7 @@ export class RoomView {
       const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
       composer = new EffectComposer(this.renderer, target);
       composer.addPass(new RenderPass(this.scene, this.camera));
-      composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.75, 0.9));
+      composer.addPass(new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.6, 0.92));
       composer.addPass(new OutputPass());
     } catch (error) {
       console.warn('Post-processing is off.', error);
@@ -241,9 +246,15 @@ export class RoomView {
     this.controls.enableDamping = true;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.06;
     this.controls.minDistance = 4;
-    // Panning slides along the floor (not up and down), like walking.
+    // A plain drag travels across the floor (panning stays level, like walking). On a touchpad, a two-finger swipe
+    // up or down tilts, sideways rotates, and pinch zooms. A mouse wheel zooms. Right-drag or Shift-drag also rotate.
     this.controls.screenSpacePanning = false;
+    this.controls.minPolarAngle = MIN_TILT;
+    this.controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+    // Where Safari reports two-finger gestures itself, do not let the touch handler zoom twice.
+    this.controls.touches = { ONE: THREE.TOUCH.PAN, TWO: 'GestureEvent' in window ? THREE.TOUCH.PAN : THREE.TOUCH.DOLLY_ROTATE };
     this.bindWalkKeys();
+    this.bindGestures();
     this.controls.addEventListener('start', () => {
       this.tweenTarget = null;
       this.userMoved = true;
@@ -312,7 +323,7 @@ export class RoomView {
       this.world.add(model.object);
       if (model.update) this.updaters.push(model.update);
       if (f.label) {
-        const label = makeLabel(f.label, { height: 0.4, color: '#c9b8a6', weight: 500 });
+        const label = makeLabel(f.label, { height: 0.4, color: '#a9b0ba', weight: 500 });
         label.position.y = model.top + 0.45;
         model.object.add(label);
       }
@@ -398,17 +409,89 @@ export class RoomView {
     step.normalize().multiplyScalar(WALK_SPEED * dt);
     this.controls.target.add(step);
     this.camera.position.add(step);
+    this.markMoved();
+  }
+
+  /** The person moved the camera themselves: stop auto-framing and skip any entrance still playing. */
+  private markMoved(): void {
     this.tweenTarget = null;
     this.userMoved = true;
     this.finishIntro();
   }
 
-  /** What a plain drag does. Shift-drag (or right-drag) always does the other one. */
-  setDragMode(mode: 'orbit' | 'pan'): void {
-    const pan = mode === 'pan';
-    this.controls.mouseButtons.LEFT = pan ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
-    this.controls.mouseButtons.RIGHT = pan ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
-    this.controls.touches.ONE = pan ? THREE.TOUCH.PAN : THREE.TOUCH.ROTATE;
+  /** Swing the camera around the point it looks at. Positive turns the room clockwise on screen. */
+  private rotateBy(angle: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target).applyAxisAngle(UP, angle);
+    this.camera.position.copy(this.controls.target).add(offset);
+    this.markMoved();
+  }
+
+  /** Look from higher up or lower down, around the point the camera looks at. Positive lowers the camera. */
+  private tiltBy(angle: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    spherical.phi = THREE.MathUtils.clamp(spherical.phi + angle, MIN_TILT, this.controls.maxPolarAngle);
+    this.camera.position.copy(this.controls.target).add(offset.setFromSpherical(spherical));
+    this.markMoved();
+  }
+
+  private zoomBy(factor: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    offset.setLength(THREE.MathUtils.clamp(offset.length() / factor, this.controls.minDistance, this.controls.maxDistance));
+    this.camera.position.copy(this.controls.target).add(offset);
+    this.markMoved();
+  }
+
+  /**
+   * Touchpad control. A two-finger swipe arrives as wheel events: up or down tilts, sideways rotates.
+   * Pinch zooms: Safari sends it (and a twist) as gesture events, Chrome and Firefox send it as a wheel event with
+   * Ctrl held, which OrbitControls already turns into a zoom. A real mouse wheel looks the same as an up or down
+   * swipe, so it is spotted and left alone to zoom.
+   */
+  private bindGestures(): void {
+    const signal = this.stopListening.signal;
+    type GestureLike = Event & { rotation: number; scale: number };
+    let lastRotation = 0;
+    let lastScale = 1;
+    const onGesture = (type: string, handler: (e: GestureLike) => void) =>
+      this.canvas.addEventListener(
+        type,
+        (e) => {
+          e.preventDefault();
+          handler(e as GestureLike);
+        },
+        { signal, passive: false },
+      );
+    onGesture('gesturestart', (e) => {
+      lastRotation = e.rotation;
+      lastScale = e.scale;
+    });
+    onGesture('gesturechange', (e) => {
+      this.rotateBy(((e.rotation - lastRotation) * Math.PI) / 180);
+      this.zoomBy(e.scale / lastScale);
+      lastRotation = e.rotation;
+      lastScale = e.scale;
+    });
+    onGesture('gestureend', () => {});
+
+    this.canvas.addEventListener(
+      'wheel',
+      (e) => {
+        if (e.ctrlKey) return;
+        // A mouse wheel moves in whole notches (or lines). Anything that arrives right after a touchpad scroll is a touchpad.
+        const notches = (e as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0;
+        const mouseWheel = e.deltaMode !== 0 || (e.deltaX === 0 && notches !== 0 && notches % 120 === 0);
+        if (mouseWheel && e.timeStamp - this.lastTouchpadAt > 250) return;
+        this.lastTouchpadAt = e.timeStamp;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        // Follow the main direction of the swipe so a slightly crooked finger does not also turn the room.
+        const { deltaX: dx, deltaY: dy } = e;
+        if (Math.abs(dx) > 0.4 * Math.abs(dy)) this.rotateBy(dx * 0.004);
+        if (Math.abs(dy) > 0.4 * Math.abs(dx)) this.tiltBy(dy * 0.003);
+      },
+      { signal, passive: false, capture: true },
+    );
   }
 
   /** Back the camera up until the whole room fits, whatever shape the window is. */
@@ -490,8 +573,8 @@ export class RoomView {
 
     const label = makeLabel(p.name, {
       height: 0.4,
-      color: heard ? '#cfe3ff' : '#ffd9c4',
-      chip: { text: String(p.order).padStart(2, '0'), color: heard ? '#9cc9ff' : '#ff8539' },
+      color: heard ? '#dfe3e8' : '#dbe8ff',
+      chip: { text: String(p.order).padStart(2, '0'), color: heard ? '#b7bfca' : '#6ea8fe' },
     });
     label.position.y = 2.2;
     group.add(hit, label);
@@ -529,7 +612,7 @@ export class RoomView {
     );
     this.world.add(this.route);
     // A small light that walks the route, so the order of the night reads at a glance.
-    this.walker = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd9b0 }));
+    this.walker = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe8f0ff }));
     this.walker.scale.setScalar(1.4);
     this.world.add(this.walker);
   }

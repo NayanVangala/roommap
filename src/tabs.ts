@@ -1,10 +1,11 @@
-import { copyButton, countUp, el, pad } from './dom';
+import { copyButton, el, icon, iconButton, pad } from './dom';
 import type { EventData, Person, PersonKind } from './schema';
 
 /**
  * The four list tabs. Each one is a plain function: event in, page out.
- * Same skeleton every time (a header, then a body) so no tab feels more important than another.
- * Everything the model wrote goes in through textContent. The only link is a LinkedIn URL the validator approved.
+ * Same skeleton every time (a title, one line of context, the Met / Heard filter, then the list)
+ * so no tab outranks another. Everything the model wrote goes in through textContent.
+ * The only link is a LinkedIn URL the validator approved.
  */
 
 export interface TabHooks {
@@ -12,6 +13,8 @@ export interface TabHooks {
   pick(id: string): void;
   /** A fresh Met / Heard filter bar. */
   chips(): HTMLElement;
+  /** Turn both filters back on. */
+  showAll(): void;
 }
 
 type Shown = Record<PersonKind, boolean>;
@@ -20,97 +23,119 @@ function shownPeople(event: EventData, shown: Shown): Person[] {
   return event.people.filter((p) => shown[p.kind]).sort((a, b) => a.order - b.order);
 }
 
-/** Cards slide up one after another. --i feeds the CSS delay. */
+/** Rows fade in one after another. --i feeds the CSS delay. */
 function rise<T extends HTMLElement>(node: T, i: number): T {
   node.classList.add('rise');
   node.style.setProperty('--i', String(i));
   return node;
 }
 
-function page(eyebrow: string, title: string, blurb: string, hooks: TabHooks): { root: HTMLElement; body: HTMLElement } {
+function page(title: string, blurb: string, hooks: TabHooks): { root: HTMLElement; body: HTMLElement } {
   const root = el('div', 'vpage');
-  const head = rise(el('header', 'vhead'), 0);
+  const head = el('header', 'vhead');
   const text = el('div');
-  text.append(el('p', 'eyebrow', eyebrow), el('h2', 'display', title), el('p', 'blurb', blurb));
+  text.append(el('h2', undefined, title), el('p', 'blurb', blurb));
   head.append(text, hooks.chips());
   const body = el('div', 'vbody');
   root.append(head, body);
   return { root, body };
 }
 
-function empty(message: string): HTMLElement {
-  return el('p', 'empty', message);
+function empty(hooks: TabHooks): HTMLElement {
+  const box = el('div', 'empty');
+  const button = el('button', 'btn sm', 'Show everyone');
+  button.type = 'button';
+  button.addEventListener('click', hooks.showAll);
+  box.append(el('p', undefined, 'No one matches the current filter.'), button);
+  return box;
 }
 
 function who(p: Person): string {
-  return [p.role, p.company].filter(Boolean).join(' · ') || p.spot || '';
+  return [p.role, p.company].filter(Boolean).join(' · ');
 }
 
-function kindTag(kind: PersonKind): HTMLElement {
-  const tag = el('span', `kind ${kind}`);
-  tag.append(el('i', `dot ${kind}`), document.createTextNode(kind === 'met' ? 'Met' : 'Heard'));
-  return tag;
+function kindLabel(kind: PersonKind): HTMLElement {
+  const label = el('span', `kind ${kind}`);
+  label.append(el('i', `dot ${kind}`), document.createTextNode(kind === 'met' ? 'Met' : 'Heard'));
+  return label;
 }
 
-// ---- People: a grid of everyone -------------------------------------------------
+function orderBadge(p: Person): HTMLElement {
+  return el('span', `order ${p.kind}`, pad(p.order));
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+// ---- People: one table ----------------------------------------------------------
 
 export function renderPeople(event: EventData, shown: Shown, hooks: TabHooks): HTMLElement {
-  const { root, body } = page('01 / People', 'Everyone in the room', 'Tap anyone to find them on the map.', hooks);
+  const { root, body } = page('People', 'Everyone from the event. Select a row to find them on the map.', hooks);
   const people = shownPeople(event, shown);
-  if (!people.length) body.append(empty('Nobody to show. Turn a filter back on.'));
-  const grid = el('div', 'pgrid');
+  if (!people.length) {
+    body.append(empty(hooks));
+    return root;
+  }
+
+  const table = el('table', 'data');
+  table.setAttribute('aria-label', 'People from the event');
+  const head = el('tr');
+  for (const [text, cls] of [['#', 'col-num'], ['Name', ''], ['Type', 'col-type'], ['Where', 'col-where'], ['Topics', 'col-topics']] as const) {
+    const th = el('th', cls, text);
+    th.scope = 'col';
+    head.append(th);
+  }
+  const thead = el('thead');
+  thead.append(head);
+
+  const tbody = el('tbody');
   people.forEach((p, i) => {
-    const card = el('button', `pcard ${p.kind}`);
-    card.type = 'button';
-    const top = el('div', 'pcard-top');
-    top.append(el('span', 'num', pad(p.order)), kindTag(p.kind));
-    card.append(top, el('h3', undefined, p.name), el('p', 'role', who(p)), el('p', 'sum', p.summary));
-    card.addEventListener('click', () => hooks.pick(p.id));
-    grid.append(rise(card, i + 1));
+    const row = rise(el('tr', 'clickable'), i);
+    const name = el('td');
+    const link = el('button', 'row-link', p.name);
+    link.type = 'button';
+    name.append(link, el('span', 'sub', who(p)));
+
+    const topics = el('td', 'col-topics');
+    for (const t of p.topics.slice(0, 3)) topics.append(el('span', 'tag', t));
+    if (p.topics.length > 3) topics.append(el('span', 'more', `+${p.topics.length - 3}`));
+
+    const type = el('td', 'col-type');
+    type.append(kindLabel(p.kind));
+    const num = el('td', 'col-num');
+    num.append(orderBadge(p));
+    row.append(num, name, type, el('td', 'col-where', p.spot ?? ''), topics);
+    row.addEventListener('click', () => hooks.pick(p.id));
+    tbody.append(row);
   });
-  body.append(grid);
+  table.append(thead, tbody);
+  body.append(table);
   return root;
 }
 
-// ---- Timeline: the night in order, with four numbers on top ---------------------
+// ---- Timeline: the night in order -----------------------------------------------
 
 export function renderTimeline(event: EventData, shown: Shown, hooks: TabHooks): HTMLElement {
-  const { root, body } = page('02 / Timeline', 'Your night in order', 'Who, when, and the one thing worth remembering.', hooks);
   const people = shownPeople(event, shown);
+  const { root, body } = page('Timeline', `${plural(people.length, 'person', 'people')}, in the order you came across them.`, hooks);
+  if (!people.length) {
+    body.append(empty(hooks));
+    return root;
+  }
 
-  const topics = new Set(people.flatMap((p) => p.topics.map((t) => t.trim().toLowerCase()).filter(Boolean)));
-  const spots = new Set(people.map((p) => p.spot?.trim().toLowerCase()).filter(Boolean));
-  const stats = el('div', 'stats');
-  const numbers: Array<[string, number]> = [
-    ['Met', people.filter((p) => p.kind === 'met').length],
-    ['Heard', people.filter((p) => p.kind === 'heard').length],
-    ['Topics', topics.size],
-    ['Spots', spots.size],
-  ];
-  numbers.forEach(([label, n], i) => {
-    const stat = rise(el('div', 'stat'), i + 1);
-    const value = el('b', 'display');
-    countUp(value, n, pad);
-    stat.append(value, el('span', 'label', label));
-    stats.append(stat);
-  });
-  body.append(stats);
-
-  if (!people.length) body.append(empty('Nobody to show. Turn a filter back on.'));
   const list = el('ol', 'timeline');
   people.forEach((p, i) => {
-    const row = el('button', `trow ${p.kind}`);
+    const row = el('button', 'trow');
     row.type = 'button';
     const text = el('div', 'trow-text');
     const heading = el('div', 'trow-head');
-    heading.append(el('strong', undefined, p.name), el('span', 'sub', who(p)));
+    heading.append(el('strong', undefined, p.name), el('span', 'sub', who(p)), kindLabel(p.kind));
     text.append(heading, el('p', undefined, p.summary));
-    if (p.quote) text.append(el('p', 'q', `“${p.quote}”`));
-    row.append(el('span', 'num', pad(p.order)), el('i', `dot ${p.kind}`), text);
+    if (p.quote) text.append(el('p', 'quote', `“${p.quote}”`));
+    row.append(orderBadge(p), text);
     row.addEventListener('click', () => hooks.pick(p.id));
-    const li = el('li');
+    const li = rise(el('li'), i);
     li.append(row);
-    list.append(rise(li, i + 5));
+    list.append(li);
   });
   body.append(list);
   return root;
@@ -119,7 +144,6 @@ export function renderTimeline(event: EventData, shown: Shown, hooks: TabHooks):
 // ---- Topics: what the night was about -------------------------------------------
 
 export function renderTopics(event: EventData, shown: Shown, hooks: TabHooks): HTMLElement {
-  const { root, body } = page('03 / Topics', 'What people talked about', 'The same topic from different people sits together.', hooks);
   const byTopic = new Map<string, Person[]>();
   for (const p of shownPeople(event, shown)) {
     for (const raw of p.topics) {
@@ -131,11 +155,16 @@ export function renderTopics(event: EventData, shown: Shown, hooks: TabHooks): H
     }
   }
   const rows = [...byTopic].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
-  if (!rows.length) body.append(empty('No topics to show.'));
+  const { root, body } = page('Topics', `${plural(rows.length, 'topic', 'topics')} from your notes, with the people behind each one.`, hooks);
+  if (!rows.length) {
+    body.append(empty(hooks));
+    return root;
+  }
+
   const list = el('ul', 'topics-list');
   rows.forEach(([topic, people], i) => {
-    const row = el('li', 'topic-row');
-    row.append(el('h3', 'display', topic), el('span', 'count', pad(people.length)));
+    const row = rise(el('li', 'topic-row'), i);
+    row.append(el('h3', undefined, topic), el('span', 'count', String(people.length)));
     const names = el('div', 'names');
     for (const p of people) {
       const chip = el('button', `namechip ${p.kind}`, p.name);
@@ -144,7 +173,7 @@ export function renderTopics(event: EventData, shown: Shown, hooks: TabHooks): H
       names.append(chip);
     }
     row.append(names);
-    list.append(rise(row, i + 1));
+    list.append(row);
   });
   body.append(list);
   return root;
@@ -153,36 +182,40 @@ export function renderTopics(event: EventData, shown: Shown, hooks: TabHooks): H
 // ---- Follow-ups: what to send ---------------------------------------------------
 
 export function renderFollowups(event: EventData, shown: Shown, hooks: TabHooks): HTMLElement {
-  const { root, body } = page('04 / Follow-ups', 'What to send', 'One line per person, ready to copy.', hooks);
+  const { root, body } = page('Follow-ups', 'A suggested message for each person. Copy it, open their LinkedIn, or find them on the map.', hooks);
   const people = shownPeople(event, shown);
-  if (!people.length) body.append(empty('Nobody to show. Turn a filter back on.'));
-  const grid = el('div', 'fgrid');
-  people.forEach((p, i) => {
-    const card = el('article', `fcard ${p.kind}`);
-    const head = el('div', 'fcard-head');
-    const name = el('div');
-    name.append(el('h3', undefined, p.name), el('p', 'role', who(p)));
-    head.append(name, kindTag(p.kind));
-    card.append(head, el('p', 'message', p.reachOut));
+  if (!people.length) {
+    body.append(empty(hooks));
+    return root;
+  }
 
+  const list = el('ul', 'followups');
+  people.forEach((p, i) => {
+    const row = rise(el('li', 'frow'), i);
+    const identity = el('div', 'frow-who');
+    identity.append(el('strong', undefined, p.name), el('span', 'sub', who(p)), kindLabel(p.kind));
+
+    const content = el('div', 'frow-body');
     const actions = el('div', 'actions-row');
-    actions.append(copyButton(() => p.reachOut));
+    actions.append(copyButton(() => p.reachOut, 'Copy message'));
     if (p.linkedin) {
-      const a = el('a', 'ghost', 'LinkedIn');
+      const a = el('a', 'btn sm');
       a.href = p.linkedin;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
+      a.append(icon('external'), el('span', undefined, 'LinkedIn'));
       actions.append(a);
     } else {
-      actions.append(el('span', 'none', 'No LinkedIn in your notes'));
+      actions.append(el('span', 'note', 'No LinkedIn link in your notes'));
     }
-    const show = el('button', 'ghost', 'Show in room');
-    show.type = 'button';
+    const show = iconButton('locate', 'Show on map');
     show.addEventListener('click', () => hooks.pick(p.id));
     actions.append(show);
-    card.append(actions);
-    grid.append(rise(card, i + 1));
+    content.append(el('p', 'message', p.reachOut), actions);
+
+    row.append(identity, content);
+    list.append(row);
   });
-  body.append(grid);
+  body.append(list);
   return root;
 }

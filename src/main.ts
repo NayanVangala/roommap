@@ -1,6 +1,6 @@
 import './style.css';
 import type { ExtractResult } from '../server/extract';
-import { $, copyButton, countUp, el, pad, reducedMotion, retrigger } from './dom';
+import { $, copyButton, el, icon, iconButton, pad, reducedMotion } from './dom';
 import { SAMPLE_EVENT, SAMPLE_NOTES } from './sample';
 import type { EventData, Person, PersonKind } from './schema';
 import { RoomView } from './scene';
@@ -24,7 +24,7 @@ let notes = SAMPLE_NOTES;
 let source: 'sample' | 'yours' = 'sample';
 let selectedId: string | null = null;
 let current: ViewName = 'room';
-/** False until the intro curtain lifts. After that, every new room plays its entrance. */
+/** False until the intro screen lifts. After that, every new room plays its entrance. */
 let booted = false;
 const shown: Record<PersonKind, boolean> = { met: true, heard: true };
 
@@ -69,7 +69,7 @@ try {
         return;
       }
       const box = stage.getBoundingClientRect();
-      tip.textContent = `${person.name} · ${person.kind === 'met' ? 'met' : 'heard'}`;
+      tip.textContent = `${person.name} · ${person.kind === 'met' ? 'Met' : 'Heard'}`;
       tip.style.left = `${x - box.left}px`;
       tip.style.top = `${y - box.top}px`;
       tip.hidden = false;
@@ -110,6 +110,14 @@ function toggleKind(kind: PersonKind): void {
   renderAll();
 }
 
+function showEveryone(): void {
+  for (const kind of ['met', 'heard'] as const) {
+    shown[kind] = true;
+    view?.setKindVisible(kind, true);
+  }
+  renderAll();
+}
+
 // ---- side panel (room tab) --------------------------------------------------
 
 const panelBody = $('panel-body');
@@ -126,24 +134,39 @@ function renderPanel(): void {
   panelBody.append(person ? renderCard(person) : renderRoster());
 }
 
+function legendItem(swatch: HTMLElement, text: string): HTMLElement {
+  const item = el('span');
+  item.append(swatch, document.createTextNode(text));
+  return item;
+}
+
 function renderRoster(): HTMLElement {
   const wrap = el('div', 'roster-wrap');
-  wrap.append(el('p', 'legend rise', 'Orange people are ones you talked to. Blue, see-through ones with sound rings are people you only listened to. The glowing line is your route.'));
-  let i = 1;
+
+  const title = el('div', 'panel-title');
+  title.append(el('h2', undefined, 'People'), el('span', 'count', String(event.people.length)));
+  const legend = el('div', 'legend');
+  legend.append(legendItem(el('i', 'dot met'), 'Met'), legendItem(el('i', 'dot heard'), 'Heard'), legendItem(el('i', 'route-swatch'), 'Route'));
+  wrap.append(title, legend);
+
+  let any = false;
   for (const kind of ['met', 'heard'] as const) {
     if (!shown[kind]) continue;
     const people = event.people.filter((p) => p.kind === kind).sort((a, b) => a.order - b.order);
-    const group = el('section', 'group rise');
-    group.style.setProperty('--i', String(i++));
-    group.append(el('h3', 'label', `${kind === 'met' ? 'People you met' : 'People you heard'} · ${pad(people.length)}`));
+    if (!people.length) continue;
+    any = true;
+    const group = el('section', 'group');
+    const label = el('h3', 'group-label', kind === 'met' ? 'Met' : 'Heard');
+    label.append(el('span', 'count', String(people.length)));
+    group.append(label);
     const list = el('ul', 'roster');
     for (const p of people) {
       const li = el('li');
       const row = el('button', 'row');
       row.type = 'button';
-      const text = el('span');
+      const text = el('span', 'row-text');
       text.append(el('span', 'name', p.name), el('span', 'sub', [p.role, p.company].filter(Boolean).join(' · ') || p.spot || ''));
-      row.append(el('span', `num ${kind}`, pad(p.order)), text);
+      row.append(el('span', `order ${kind}`, pad(p.order)), text);
       row.addEventListener('click', () => select(p.id));
       li.append(row);
       list.append(li);
@@ -151,11 +174,19 @@ function renderRoster(): HTMLElement {
     group.append(list);
     wrap.append(group);
   }
+  if (!any) {
+    const none = el('div', 'empty');
+    const button = el('button', 'btn sm', 'Show everyone');
+    button.type = 'button';
+    button.addEventListener('click', showEveryone);
+    none.append(el('p', undefined, 'No one matches the current filter.'), button);
+    wrap.append(none);
+  }
   return wrap;
 }
 
 function field(label: string, ...content: Node[]): HTMLElement {
-  const wrap = el('div', 'field rise');
+  const wrap = el('div', 'field');
   wrap.append(el('span', 'label', label), ...content);
   return wrap;
 }
@@ -163,34 +194,31 @@ function field(label: string, ...content: Node[]): HTMLElement {
 function renderCard(p: Person): HTMLElement {
   const card = el('article', 'card');
 
-  const back = el('button', 'ghost back rise', 'All people');
-  back.type = 'button';
+  const back = iconButton('back', 'People', 'btn sm back');
   back.addEventListener('click', () => select(null));
 
-  const head = el('div', 'card-head rise');
-  const badge = el('span', `badge ${p.kind}`);
-  badge.append(el('i', `dot ${p.kind}`), document.createTextNode(p.kind === 'met' ? 'Met' : 'Heard'));
-  head.append(badge, el('h2', 'display', p.name));
+  const head = el('div', 'card-head');
+  const kind = el('span', `kind ${p.kind}`);
+  kind.append(el('i', `dot ${p.kind}`), document.createTextNode(p.kind === 'met' ? 'Met' : 'Heard'));
+  head.append(kind, el('h2', undefined, p.name));
   const who = [p.role, p.company].filter(Boolean).join(' · ');
   if (who) head.append(el('p', 'meta', who));
-  const where = [`#${p.order} of the night`, p.spot].filter(Boolean).join(' · ');
-  head.append(el('p', 'meta mono', where));
-
+  head.append(el('p', 'meta faint', [`Person ${p.order} of ${event.people.length}`, p.spot].filter(Boolean).join(' · ')));
   card.append(back, head);
 
   if (p.topics.length) {
-    const topics = el('ul', 'topics rise');
+    const topics = el('ul', 'topics');
     for (const t of p.topics) topics.append(el('li', undefined, t));
     card.append(topics);
   }
 
   card.append(field(p.kind === 'met' ? 'What you talked about' : 'What you heard', el('p', undefined, p.summary)));
 
-  if (p.quote) card.append(field('From your notes', el('blockquote', undefined, `“${p.quote}”`)));
+  if (p.quote) card.append(field('Quote', el('blockquote', undefined, `“${p.quote}”`)));
 
   const reach = el('div', 'copyline');
   reach.append(el('p', undefined, p.reachOut), copyButton(() => p.reachOut));
-  card.append(field('Reach out', reach));
+  card.append(field('Suggested follow-up', reach));
 
   const link = el('div', 'copyline');
   if (p.linkedin) {
@@ -200,12 +228,9 @@ function renderCard(p: Person): HTMLElement {
     a.rel = 'noopener noreferrer';
     link.append(a, copyButton(() => p.linkedin ?? ''));
   } else {
-    link.append(el('p', 'none', 'No LinkedIn in your notes. Ask them next time.'));
+    link.append(el('p', 'none', 'No LinkedIn link in your notes.'));
   }
   card.append(field('LinkedIn', link));
-
-  // Stagger the sections in, whatever order they ended up in.
-  card.querySelectorAll<HTMLElement>('.rise').forEach((node, i) => node.style.setProperty('--i', String(i)));
   return card;
 }
 
@@ -213,6 +238,7 @@ function renderCard(p: Person): HTMLElement {
 
 const tabHooks: TabHooks = {
   chips,
+  showAll: showEveryone,
   pick(id) {
     go('room');
     select(id);
@@ -240,7 +266,7 @@ function renderAll(): void {
   if (current !== 'room') renderView(current);
 }
 
-/** The orange pill slides under whichever tab is active (CSS crops it to that tab, see .tab-pill). */
+/** The highlight slides under whichever tab is active (CSS crops it to that tab, see .tab-pill). */
 function movePill(): void {
   const tab = $<HTMLButtonElement>(`tab-${current}`);
   const tabs = $('tabs');
@@ -288,34 +314,22 @@ $('tabs').addEventListener('keydown', (e) => {
 
 window.addEventListener('resize', movePill);
 
-// ---- header / hero ----------------------------------------------------------
+// ---- room controls ----------------------------------------------------------
 
 function renderHeader(): void {
   $('venue-name').textContent = event.venue.name;
-  $('source').textContent = source === 'sample' ? 'Sample data' : 'Your notes';
-  countUp($('n-met'), event.people.filter((p) => p.kind === 'met').length, pad);
-  countUp($('n-heard'), event.people.filter((p) => p.kind === 'heard').length, pad);
-  retrigger($('venue-name').parentElement as HTMLElement);
+  $('source').textContent = source === 'sample' ? 'Sample data' : 'From your notes';
 }
 
+$('reset-view').prepend(icon('reset'));
+$('close-dialog').append(icon('close'));
 $('reset-view').addEventListener('click', () => view?.resetView());
 
-// What a plain drag does in the room: spin around it, or travel across the floor.
-const HINTS = {
-  orbit: 'Drag to orbit · Shift-drag or WASD to move · Scroll to zoom',
-  pan: 'Drag to move around · Shift-drag to orbit · WASD works too',
-};
-
-function setDragMode(mode: 'orbit' | 'pan'): void {
-  view?.setDragMode(mode);
-  $('drag-orbit').setAttribute('aria-pressed', String(mode === 'orbit'));
-  $('drag-pan').setAttribute('aria-pressed', String(mode === 'pan'));
-  $('hint').textContent = HINTS[mode];
-}
-
-$('drag-orbit').addEventListener('click', () => setDragMode('orbit'));
-$('drag-pan').addEventListener('click', () => setDragMode('pan'));
-setDragMode('orbit');
+// Only Safari reports a trackpad twist to web pages, so only it gets the twist hint.
+$('hint').textContent =
+  'GestureEvent' in window
+    ? 'Drag to move. Swipe with two fingers to tilt, twist to rotate, pinch to zoom.'
+    : 'Drag to move. Swipe with two fingers to tilt and rotate, pinch to zoom.';
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && selectedId && !(document.getElementById('notes-dialog') as HTMLDialogElement).open) select(null);
@@ -333,7 +347,7 @@ function applyEvent(next: EventData, nextNotes: string, nextSource: 'sample' | '
   renderAll();
 }
 
-// ---- mode chip --------------------------------------------------------------
+// ---- mode badge -------------------------------------------------------------
 
 async function loadMode(): Promise<void> {
   const mode = $('mode');
@@ -341,10 +355,12 @@ async function loadMode(): Promise<void> {
     const res = await fetch('/api/status');
     const body = (await res.json()) as { mode: 'mock' | 'argon' };
     mode.dataset.state = body.mode;
-    mode.textContent = body.mode === 'argon' ? 'Argon connected' : 'Mock mode (no API key)';
+    mode.textContent = body.mode === 'argon' ? 'Argon' : 'Demo mode';
+    mode.title = body.mode === 'argon' ? 'Argon reads your notes and proposes the room. An API key is set.' : 'No API key. Only the sample notes can be built.';
   } catch {
     mode.dataset.state = 'offline';
     mode.textContent = 'Server offline';
+    mode.title = 'The dev server did not answer.';
   }
 }
 
@@ -389,7 +405,7 @@ function renderReport(result: ExtractResult | { error: string }): void {
       const title = el('div');
       title.append(
         el('b', clean ? 'ok' : 'bad', `Round ${round.n}: `),
-        document.createTextNode(clean ? 'checker found nothing wrong' : `checker found ${round.problems.length} problem${round.problems.length === 1 ? '' : 's'}`),
+        document.createTextNode(clean ? 'no problems found' : `${round.problems.length} problem${round.problems.length === 1 ? '' : 's'} found, sent back to Argon`),
       );
       box.append(title);
       if (!clean) {
@@ -401,14 +417,14 @@ function renderReport(result: ExtractResult | { error: string }): void {
     }
   }
   if ('error' in result && result.error) report.append(el('p', 'status bad', result.error));
-  else if ('ok' in result && result.ok) report.append(el('p', 'status', 'Room built. Close this to look around.'));
+  else if ('ok' in result && result.ok) report.append(el('p', 'status', 'Room built. Close this window to see it.'));
 }
 
 $('notes-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = notesBox.value;
   buildButton.disabled = true;
-  report.replaceChildren(el('p', 'status', 'Working. Argon proposes, the checker verifies, and this can take a little while.'));
+  report.replaceChildren(el('p', 'status', 'Building the room. Argon drafts it and the checker verifies it.'));
   try {
     const file = imageInput.files?.[0];
     const image = file ? await readImage(file) : undefined;
@@ -443,16 +459,15 @@ applyEvent(event, notes, source);
 void loadMode();
 go('room');
 
-/** Lift the curtain once fonts are in: the room rises and the camera swoops down. */
+/** Lift the intro screen once the font is in: the room rises and the camera swoops down. */
 async function reveal(): Promise<void> {
   await Promise.race([document.fonts.ready, new Promise((resolve) => setTimeout(resolve, 1500))]);
-  if (!reducedMotion) await new Promise((resolve) => setTimeout(resolve, 900));
+  if (!reducedMotion) await new Promise((resolve) => setTimeout(resolve, 350));
   booted = true;
-  document.body.classList.add('ready');
   $('intro').classList.add('done');
   view?.playIntro();
   movePill();
-  setTimeout(() => document.getElementById('intro')?.remove(), 1800);
+  setTimeout(() => document.getElementById('intro')?.remove(), 900);
 }
 void reveal();
 
